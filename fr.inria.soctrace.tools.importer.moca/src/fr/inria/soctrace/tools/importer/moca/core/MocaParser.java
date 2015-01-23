@@ -44,7 +44,7 @@ import fr.inria.soctrace.tools.importer.moca.core.MocaConstants;
 import fr.inria.soctrace.tools.importer.moca.core.MocaConstants.MocaTraceType;
 
 /**
- * HeapInfo Parser core class.
+ * Moca Parser core class.
  * 
  * Warning: the current implementation of this parser works under the hypothesis
  * that a producer may be in a single state at a given time.
@@ -74,7 +74,7 @@ public class MocaParser {
 	private IdManager epIdManager = new IdManager();
 	private IdManager eptIdManager = new IdManager();
 	private Long currStart = -1l, currEnd = -1l;
-	private EventProducer root;
+	private Map<MocaTraceType, EventProducer> root = new HashMap<MocaTraceType, EventProducer>();
 	private Map<MocaTraceType, EventProducer> currEP = new HashMap<MocaTraceType, EventProducer>();
 
 	private Map<MocaTraceType, List<Event>> elist = new HashMap<MocaTraceType, List<Event>>();
@@ -124,13 +124,19 @@ public class MocaParser {
 			types.put(et.getName(), et);
 		}
 		
-		root = new EventProducer(epIdManager.getNextId());
-		root.setName("MemoryRoot");
-		root.setParentId(EventProducer.NO_PARENT_ID);
-		root.setLocalId(String.valueOf(root.getId()));
 		for (MocaTraceType aTraceType : activeTypes) {
-			producersMap.get(aTraceType).put("MemoryRoot", root);
-			allProducers.get(aTraceType).add(root);
+			EventProducer rootEp = new EventProducer(epIdManager.getNextId());
+			String rootName = "MemoryRoot";
+			if (aTraceType == MocaTraceType.TASK_PRODUCER)
+				rootName = "Moca Launcher";
+
+			rootEp.setName(rootName);
+			rootEp.setParentId(EventProducer.NO_PARENT_ID);
+			rootEp.setLocalId(String.valueOf(rootEp.getId()));
+
+			root.put(aTraceType, rootEp);
+			producersMap.get(aTraceType).put(rootName, rootEp);
+			allProducers.get(aTraceType).add(rootEp);
 		}
 		numberOfEvents = 0;
 
@@ -416,15 +422,15 @@ public class MocaParser {
 			if (producersMap.containsKey(fields[MocaConstants.T_PID]))
 				return;
 
-			// Create the event producer
-			EventProducer ep = new EventProducer(epIdManager.getNextId());
-			ep.setName(fields[MocaConstants.T_PID]);
-			// No parents
-			ep.setParentId(root.getId());
-			ep.setType(fields[MocaConstants.ENTITY]);
-			ep.setLocalId(String.valueOf(ep.getId()));
-
 			for (MocaTraceType currentTraceType : activeTypes) {
+				// Create the event producer
+				EventProducer ep = new EventProducer(epIdManager.getNextId());
+				ep.setName(fields[MocaConstants.T_PID]);
+				// No parents (root)
+				ep.setParentId(root.get(currentTraceType).getId());
+				ep.setType(fields[MocaConstants.ENTITY]);
+				ep.setLocalId(String.valueOf(ep.getId()));
+
 				producersMap.get(currentTraceType).put(
 						fields[MocaConstants.T_PID], ep);
 				allProducers.get(currentTraceType).add(ep);
@@ -443,6 +449,9 @@ public class MocaParser {
 		}
 	}
 
+	/**
+	 * Initialize collections for all active trace types
+	 */
 	private void initCollections() {
 		for (MocaTraceType aTraceType : activeTypes) {
 			producersMap.put(aTraceType, new HashMap<String, EventProducer>());

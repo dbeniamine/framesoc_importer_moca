@@ -12,7 +12,7 @@
 package fr.inria.soctrace.tools.importer.moca.core;
 
 /**
- * Constants for HeapInfo parser
+ * Constants for Moca parser
  * 
  * @author "David Beniamine <David.Beniamine@imag.fr>"
  */

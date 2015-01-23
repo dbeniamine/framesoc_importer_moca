@@ -15,7 +15,7 @@ package fr.inria.soctrace.tools.importer.moca.core;
 import fr.inria.soctrace.lib.model.utils.SoCTraceException;
 
 /**
- * Interface for HeapInfo line parsers
+ * Interface for Moca line parsers
  * 
  * @author "Generoso Pagano <generoso.pagano@inria.fr>"
  * @author "David Beniamine <David.Beniamine@imag.fr>"

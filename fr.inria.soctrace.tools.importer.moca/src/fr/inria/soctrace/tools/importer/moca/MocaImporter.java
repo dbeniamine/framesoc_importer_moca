@@ -38,7 +38,7 @@ import fr.inria.soctrace.tools.importer.moca.core.MocaConstants.MocaTraceType;
 import fr.inria.soctrace.tools.importer.moca.core.MocaParser;
 
 /**
- * HeapInfo importer tool.
+ * Moca importer tool.
  * 
  * @author "David Beniamine <David.Beniamine@imag.fr>"
  * @author "Generoso Pagano <Generoso.Pagano@inria.fr>"
@@ -142,7 +142,7 @@ public class MocaImporter extends FramesocTool {
 
 	@Override
 	public void launch(IFramesocToolInput input) {
-		PluginImporterJob job = new PluginImporterJob("HeapInfo V2 Importer",
+		PluginImporterJob job = new PluginImporterJob("Moca Importer",
 				new MocaImporterPluginJobBody(input));
 		job.setUser(true);
 		job.schedule();
