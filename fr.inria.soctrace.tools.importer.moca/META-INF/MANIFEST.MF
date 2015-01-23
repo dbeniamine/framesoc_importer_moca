@@ -1,0 +1,16 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: Heapinfo v2
+Bundle-SymbolicName: fr.inria.soctrace.tools.importer.moca;singleton:=true
+Bundle-Version: 1.0.0.qualifier
+Bundle-Activator: fr.inria.soctrace.tools.importer.moca.Activator
+Require-Bundle: org.eclipse.ui,
+ org.eclipse.core.runtime,
+ fr.inria.soctrace.framesoc.core,
+ fr.inria.soctrace.lib.storage,
+ fr.inria.soctrace.lib.model,
+ fr.inria.soctrace.lib.utils,
+ fr.inria.soctrace.lib.slf4j,
+ org.eclipse.wb.core.lib
+Bundle-RequiredExecutionEnvironment: JavaSE-1.7
+Bundle-ActivationPolicy: lazy

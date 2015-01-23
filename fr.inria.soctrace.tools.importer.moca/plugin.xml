@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?eclipse version="3.4"?>
+<plugin>
+   <extension
+         point="fr.inria.soctrace.framesoc.core.tool">
+      <tool
+            class="fr.inria.soctrace.tools.importer.moca.MocaImporter"
+            doc="Trace file(s) produced by Moca"
+            name="Moca Importer"
+            type="IMPORT"
+            id="fr.inria.soctrace.tools.importer.moca">
+      </tool>
+   </extension>
+
+</plugin>
