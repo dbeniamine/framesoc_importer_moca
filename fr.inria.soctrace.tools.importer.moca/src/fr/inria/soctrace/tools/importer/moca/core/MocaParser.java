@@ -14,6 +14,7 @@ package fr.inria.soctrace.tools.importer.moca.core;
 import java.io.BufferedReader;
 import java.io.DataInputStream;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
@@ -67,6 +68,8 @@ public class MocaParser {
 	private Map<MocaTraceType, List<EventProducer>> allProducers = new HashMap<MocaTraceType, List<EventProducer>>();
 	private ArrayList<MocaTraceType> activeTypes = new ArrayList<MocaTraceType>();
 	
+	private Map<MocaTraceType, Map<Long, EventProducer>> mergedProdIndex = new HashMap<MocaTraceType, Map<Long, EventProducer>>();
+	
 	private int numberOfEvents = 0;
 	private int page = 0;
 	private IdManager eIdManager = new IdManager();
@@ -75,11 +78,12 @@ public class MocaParser {
 	private IdManager eptIdManager = new IdManager();
 	private Long currStart = -1l, currEnd = -1l;
 	private Map<MocaTraceType, EventProducer> root = new HashMap<MocaTraceType, EventProducer>();
-	private Map<MocaTraceType, EventProducer> currEP = new HashMap<MocaTraceType, EventProducer>();
+	private Map<MocaTraceType, EventProducer> currentEP = new HashMap<MocaTraceType, EventProducer>();
 
-	private Map<MocaTraceType, List<Event>> elist = new HashMap<MocaTraceType, List<Event>>();
+	private Map<MocaTraceType, List<Event>> eventList = new HashMap<MocaTraceType, List<Event>>();
 	
-
+	private int memoryPageSize = -1;
+	
 	public MocaParser(SystemDBObject sysDB, HashMap<MocaTraceType, TraceDBObject> tracesDB,
 			List<String> arrayList) {
 
@@ -127,7 +131,9 @@ public class MocaParser {
 		for (MocaTraceType aTraceType : activeTypes) {
 			EventProducer rootEp = new EventProducer(epIdManager.getNextId());
 			String rootName = "MemoryRoot";
-			if (aTraceType == MocaTraceType.TASK_PRODUCER)
+			
+			if (aTraceType == MocaTraceType.TASK_PHYSICAL_ADDRESSING
+					|| aTraceType == MocaTraceType.TASK_VIRTUAL_ADDRESSING)
 				rootName = "Moca Launcher";
 
 			rootEp.setName(rootName);
@@ -151,8 +157,34 @@ public class MocaParser {
 	 */
 	public void parseTrace(IProgressMonitor monitor) throws SoCTraceException {
 		monitor.beginTask("Parsing Trace", traceFiles.size());
+		// Files contaning event producers info
+		List<String> producerFiles = new LinkedList<String>();
+		// Files containing trace info
+		List<String> eventFiles = new LinkedList<String>();
+		
 		
 		for (String aTraceFile : traceFiles) {
+			// If trace info file type
+			if(aTraceFile.contains(MocaConstants.TRACE_FILE_TYPE))
+				eventFiles.add(aTraceFile);
+			else
+				producerFiles.add(aTraceFile);
+		}
+
+		for (String aTraceFile : producerFiles) {
+			monitor.subTask("Building Event Producer...");
+			parseEventProd(monitor, aTraceFile);
+		}
+
+		if (monitor.isCanceled()) {
+			for (TraceDBObject aTraceDB : traceDB.values())
+				aTraceDB.dropDatabase();
+
+			sysDB.rollback();
+			return;
+		}
+		
+		for (String aTraceFile : eventFiles) {
 			monitor.subTask(aTraceFile);
 			logger.debug("Trace file: {}", aTraceFile);
 
@@ -194,14 +226,14 @@ public class MocaParser {
 					parser.parseLine(line);
 
 				for (MocaTraceType currentTraceType : activeTypes) {
-					if (elist.get(currentTraceType).size() == MocaConstants.PAGE_SIZE)
+					if (eventList.get(currentTraceType).size() == MocaConstants.DB_PAGE_SIZE)
 						page++;
 
 					// XXX
-					if (elist.get(currentTraceType).size() >= MocaConstants.PAGE_SIZE) {
-						saveEvents(elist.get(currentTraceType), currentTraceType);
-						numberOfEvents += elist.get(currentTraceType).size();
-						elist.get(currentTraceType).clear();
+					if (eventList.get(currentTraceType).size() >= MocaConstants.DB_PAGE_SIZE) {
+						saveEvents(eventList.get(currentTraceType), currentTraceType);
+						numberOfEvents += eventList.get(currentTraceType).size();
+						eventList.get(currentTraceType).clear();
 					}
 					
 					if (monitor.isCanceled()) {
@@ -211,10 +243,10 @@ public class MocaParser {
 			}
 			
 			for (MocaTraceType currentTraceType : activeTypes) {
-				if (elist.get(currentTraceType).size() > 0) {
-					saveEvents(elist.get(currentTraceType), currentTraceType);
-					numberOfEvents += elist.get(currentTraceType).size();
-					elist.get(currentTraceType).clear();
+				if (eventList.get(currentTraceType).size() > 0) {
+					saveEvents(eventList.get(currentTraceType), currentTraceType);
+					numberOfEvents += eventList.get(currentTraceType).size();
+					eventList.get(currentTraceType).clear();
 
 					if (monitor.isCanceled()) {
 						return;
@@ -287,6 +319,10 @@ public class MocaParser {
 		for (EventProducer ep : eps) {
 			traceDB.get(aTraceType).save(ep);
 		}
+
+		logger.debug("For trace type: " + aTraceType + ", " + eps.size()
+				+ " event producers were saved");
+		
 		traceDB.get(aTraceType).commit();
 	}
 
@@ -309,8 +345,16 @@ public class MocaParser {
 	}
 
 	private EventProducer find_producer_struct(long addr, MocaTraceType currentTraceType) {
+		if(mergedProdIndex.get(currentTraceType).containsKey(addr))
+			return mergedProdIndex.get(currentTraceType).get(addr);
+		
 		for (EventProducer ep : currentProducers.get(currentTraceType)) {
-			if (addr == Long.parseLong(ep.getName())) {
+			long newEpAddr = Long.parseLong(ep.getName());
+			if (addr == newEpAddr) {
+				return ep;
+			}
+			if(Math.abs(addr - newEpAddr) == memoryPageSize) {
+				mergedProdIndex.get(currentTraceType).put(addr, ep);
 				return ep;
 			}
 		}
@@ -334,14 +378,40 @@ public class MocaParser {
 		return MocaConstants.A_Type_Private;
 	}
 	
-	private EventProducer createProducer(long anAddress, MocaTraceType currentTraceType) {
+	/**
+	 * Create a new event producer
+	 * 
+	 * @param anAddress
+	 *            producer name
+	 * @param ppid
+	 *            producer parent id
+	 * @return the newly created EP
+	 */
+	private EventProducer createProducer(long anAddress, int ppid) {
 		EventProducer newEP = new EventProducer(epIdManager.getNextId());
-		
+
 		newEP.setName(Long.toString(anAddress));
-		newEP.setParentId(currEP.get(currentTraceType).getId());
+		newEP.setParentId(ppid);
 		newEP.setType("Memory Zone");
 		newEP.setLocalId(String.valueOf(newEP.getId()));
-		producersMap.get(currentTraceType).put(Long.toHexString(anAddress), newEP);
+
+		return newEP;
+	}
+
+	/**
+	 * Create an event prpducer for a specific trace type
+	 * 
+	 * @param anAddress
+	 *            producer name
+	 * @param currentTraceType
+	 * @return the newly created EP
+	 */
+	private EventProducer createProducer(long anAddress,
+			MocaTraceType currentTraceType) {
+		EventProducer newEP = createProducer(anAddress,
+				currentEP.get(currentTraceType).getId());
+		producersMap.get(currentTraceType).put(Long.toHexString(anAddress),
+				newEP);
 		currentProducers.get(currentTraceType).add(newEP);
 		allProducers.get(currentTraceType).add(newEP);
 
@@ -364,7 +434,7 @@ public class MocaParser {
 				EventProducer prod;
 				long address;
 
-				if (currentTraceType == MocaTraceType.VIRTUAL_ADDRESSING) {
+				if (currentTraceType == MocaTraceType.TASK_VIRTUAL_ADDRESSING) {
 					address = Long.parseLong(fields[MocaConstants.A_VirtAddr],
 							16);
 				} else {
@@ -373,7 +443,7 @@ public class MocaParser {
 				}
 
 				if (currentTraceType == MocaTraceType.TASK_PRODUCER) {
-					prod = currEP.get(currentTraceType);
+					prod = currentEP.get(currentTraceType);
 				} else {
 					prod = find_producer_struct(address, currentTraceType);
 				}
@@ -410,7 +480,7 @@ public class MocaParser {
 								}
 							}
 						}
-						elist.get(currentTraceType).add(v);
+						eventList.get(currentTraceType).add(v);
 					}
 				}
 			}
@@ -434,11 +504,17 @@ public class MocaParser {
 				producersMap.get(currentTraceType).put(
 						fields[MocaConstants.T_PID], ep);
 				allProducers.get(currentTraceType).add(ep);
-				currEP.put(currentTraceType, ep);
+				currentEP.put(currentTraceType, ep);
+				
+				if(fields[MocaConstants.T_ID].equals(MocaConstants.TASK_ZERO))
+					memoryPageSize = Integer.valueOf(fields[MocaConstants.MEM_PAGE_SIZE]);
+
+				if (memoryPageSize == -1) {
+					logger.error("Error getting memory page size.");
+				}
 			}
 		}
 	}
-
 	
 	private class ChunkParser implements MocaLineParser {
 
@@ -457,7 +533,40 @@ public class MocaParser {
 			producersMap.put(aTraceType, new HashMap<String, EventProducer>());
 			currentProducers.put(aTraceType, new LinkedList<EventProducer>());
 			allProducers.put(aTraceType, new LinkedList<EventProducer>());
-			elist.put(aTraceType, new LinkedList<Event>());
+			eventList.put(aTraceType, new LinkedList<Event>());
+			mergedProdIndex.put(aTraceType, new HashMap<Long, EventProducer>());
 		}
 	}
+
+	private void parseEventProd(IProgressMonitor monitor, String aTraceFile) {
+		
+		HashMap<Long, List<String>> producerTaskIndex = new HashMap<Long, List<String>>();
+		BufferedReader br;
+		try {
+			br = new BufferedReader(new InputStreamReader(new DataInputStream(
+					new FileInputStream(aTraceFile))));
+
+			String[] line;
+
+			while ((line = getLine(br)) != null) {
+				if (line.length <= 1)
+					continue;
+
+				long addr = Long.valueOf(line[0]);
+				producerTaskIndex.put(addr, new LinkedList<String>());
+// Create a producer with root pid
+				//
+				for (int i = 1; i < line.length; i++) {
+					producerTaskIndex.get(addr).add(line[i]);
+				}
+			}
+		} catch (FileNotFoundException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+	}
+	
 }

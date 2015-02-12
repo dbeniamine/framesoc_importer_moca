@@ -26,13 +26,14 @@ public class MocaConstants {
 	/**
 	 * Page size
 	 */
-	public static final int PAGE_SIZE = 200000;
+	public static final int DB_PAGE_SIZE = 200000;
 
 	/**
 	 * Trace Type name
 	 */
 	public static final String TRACE_TYPE = "moca";
 	public static final String TRACE_EXT = ".log";
+	public static final String TRACE_FILE_TYPE = "Moca-task";
 
 	/**
 	 * Entity labels
@@ -43,7 +44,10 @@ public class MocaConstants {
 	
 	// Task ID PID
 	public static final int T_ID = 1;
-	public static final int T_PID= 2;
+	public static final int T_PID = 2;
+	public static final int MEM_PAGE_SIZE = 3;
+	public static final String TASK_ZERO = "0";
+	
 
 	/** Line positions for interesting columns */
 	public static final int ENTITY = 0;
@@ -105,7 +109,7 @@ public class MocaConstants {
 	 * Enumerate the different types of traces
 	 */
 	public static enum MocaTraceType {
-		VIRTUAL_ADDRESSING, PHYSICAL_ADDRESSING, TASK_PRODUCER
+		TASK_VIRTUAL_ADDRESSING, TASK_PHYSICAL_ADDRESSING, VIRTUAL_ADDRESSING, PHYSICAL_ADDRESSING
 	};
 
 }
