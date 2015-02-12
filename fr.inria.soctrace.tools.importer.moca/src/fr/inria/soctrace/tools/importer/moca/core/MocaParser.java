@@ -14,12 +14,13 @@ package fr.inria.soctrace.tools.importer.moca.core;
 import java.io.BufferedReader;
 import java.io.DataInputStream;
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -68,8 +69,6 @@ public class MocaParser {
 	private Map<MocaTraceType, List<EventProducer>> allProducers = new HashMap<MocaTraceType, List<EventProducer>>();
 	private ArrayList<MocaTraceType> activeTypes = new ArrayList<MocaTraceType>();
 	
-	private Map<MocaTraceType, Map<Long, EventProducer>> mergedProdIndex = new HashMap<MocaTraceType, Map<Long, EventProducer>>();
-	
 	private int numberOfEvents = 0;
 	private int page = 0;
 	private IdManager eIdManager = new IdManager();
@@ -83,11 +82,12 @@ public class MocaParser {
 	private Map<MocaTraceType, List<Event>> eventList = new HashMap<MocaTraceType, List<Event>>();
 	
 	private int memoryPageSize = -1;
+	private int maxLevelOfMerging = 4;
 	
 	public MocaParser(SystemDBObject sysDB, HashMap<MocaTraceType, TraceDBObject> tracesDB,
-			List<String> arrayList) {
+			List<String> traceFileName) {
 
-		this.traceFiles = arrayList;
+		this.traceFiles = traceFileName;
 		this.sysDB = sysDB;
 		this.traceDB = tracesDB;
 		activeTypes.addAll(traceDB.keySet());
@@ -144,8 +144,8 @@ public class MocaParser {
 			producersMap.get(aTraceType).put(rootName, rootEp);
 			allProducers.get(aTraceType).add(rootEp);
 		}
+		
 		numberOfEvents = 0;
-
 		page = 0;
 	}
 
@@ -157,24 +157,6 @@ public class MocaParser {
 	 */
 	public void parseTrace(IProgressMonitor monitor) throws SoCTraceException {
 		monitor.beginTask("Parsing Trace", traceFiles.size());
-		// Files contaning event producers info
-		List<String> producerFiles = new LinkedList<String>();
-		// Files containing trace info
-		List<String> eventFiles = new LinkedList<String>();
-		
-		
-		for (String aTraceFile : traceFiles) {
-			// If trace info file type
-			if(aTraceFile.contains(MocaConstants.TRACE_FILE_TYPE))
-				eventFiles.add(aTraceFile);
-			else
-				producerFiles.add(aTraceFile);
-		}
-
-		for (String aTraceFile : producerFiles) {
-			monitor.subTask("Building Event Producer...");
-			parseEventProd(monitor, aTraceFile);
-		}
 
 		if (monitor.isCanceled()) {
 			for (TraceDBObject aTraceDB : traceDB.values())
@@ -184,7 +166,7 @@ public class MocaParser {
 			return;
 		}
 		
-		for (String aTraceFile : eventFiles) {
+		for (String aTraceFile : traceFiles) {
 			monitor.subTask(aTraceFile);
 			logger.debug("Trace file: {}", aTraceFile);
 
@@ -201,6 +183,8 @@ public class MocaParser {
 			}
 		}
 		
+		createIntermediateEP();
+		
 		for (MocaTraceType currentTraceType : activeTypes) {
 			saveProducers(currentTraceType);
 			saveTypes(currentTraceType);
@@ -214,8 +198,11 @@ public class MocaParser {
 					new DataInputStream(new FileInputStream(aTraceFile))));
 			String[] line;
 			MocaLineParser parser;
-			for(MocaTraceType aTraceType: activeTypes)
-				currentProducers.put(aTraceType, new LinkedList<EventProducer>());
+			for (MocaTraceType aTraceType : activeTypes)
+				if (aTraceType != MocaTraceType.PHYSICAL_ADDRESSING
+						&& aTraceType != MocaTraceType.VIRTUAL_ADDRESSING)
+					currentProducers.put(aTraceType,
+							new LinkedList<EventProducer>());
 
 			while ((line = getLine(br)) != null) {
 
@@ -323,6 +310,9 @@ public class MocaParser {
 		logger.debug("For trace type: " + aTraceType + ", " + eps.size()
 				+ " event producers were saved");
 		
+		System.err.println("For trace type: " + aTraceType + ", " + eps.size()
+				+ " event producers were saved");
+		
 		traceDB.get(aTraceType).commit();
 	}
 
@@ -345,16 +335,9 @@ public class MocaParser {
 	}
 
 	private EventProducer find_producer_struct(long addr, MocaTraceType currentTraceType) {
-		if(mergedProdIndex.get(currentTraceType).containsKey(addr))
-			return mergedProdIndex.get(currentTraceType).get(addr);
-		
 		for (EventProducer ep : currentProducers.get(currentTraceType)) {
 			long newEpAddr = Long.parseLong(ep.getName());
 			if (addr == newEpAddr) {
-				return ep;
-			}
-			if(Math.abs(addr - newEpAddr) == memoryPageSize) {
-				mergedProdIndex.get(currentTraceType).put(addr, ep);
 				return ep;
 			}
 		}
@@ -442,11 +425,7 @@ public class MocaParser {
 							16);
 				}
 
-				if (currentTraceType == MocaTraceType.TASK_PRODUCER) {
-					prod = currentEP.get(currentTraceType);
-				} else {
-					prod = find_producer_struct(address, currentTraceType);
-				}
+				prod = find_producer_struct(address, currentTraceType);
 
 				// Create one event for reads, one for writes
 				for (int type = MocaConstants.A_Type_Read; type <= MocaConstants.A_Type_Write; type++) {
@@ -493,6 +472,12 @@ public class MocaParser {
 				return;
 
 			for (MocaTraceType currentTraceType : activeTypes) {
+				if (currentTraceType == MocaTraceType.VIRTUAL_ADDRESSING
+						|| currentTraceType == MocaTraceType.PHYSICAL_ADDRESSING) {
+					currentEP.put(currentTraceType, root.get(currentTraceType));
+					continue;
+				}
+				
 				// Create the event producer
 				EventProducer ep = new EventProducer(epIdManager.getNextId());
 				ep.setName(fields[MocaConstants.T_PID]);
@@ -534,39 +519,74 @@ public class MocaParser {
 			currentProducers.put(aTraceType, new LinkedList<EventProducer>());
 			allProducers.put(aTraceType, new LinkedList<EventProducer>());
 			eventList.put(aTraceType, new LinkedList<Event>());
-			mergedProdIndex.put(aTraceType, new HashMap<Long, EventProducer>());
 		}
 	}
 
-	private void parseEventProd(IProgressMonitor monitor, String aTraceFile) {
-		
-		HashMap<Long, List<String>> producerTaskIndex = new HashMap<Long, List<String>>();
-		BufferedReader br;
-		try {
-			br = new BufferedReader(new InputStreamReader(new DataInputStream(
-					new FileInputStream(aTraceFile))));
-
-			String[] line;
-
-			while ((line = getLine(br)) != null) {
-				if (line.length <= 1)
-					continue;
-
-				long addr = Long.valueOf(line[0]);
-				producerTaskIndex.put(addr, new LinkedList<String>());
-// Create a producer with root pid
-				//
-				for (int i = 1; i < line.length; i++) {
-					producerTaskIndex.get(addr).add(line[i]);
-				}
-			}
-		} catch (FileNotFoundException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+	private void createIntermediateEP() {
+		for (MocaTraceType aTraceType : activeTypes) {
+			System.err.println(aTraceType);
+			allProducers.get(aTraceType).addAll(
+					mergeProducer(allProducers.get(aTraceType), 0.0));
 		}
+	}
+	
+	List<EventProducer> mergeProducer(List<EventProducer> eventProdToMerge,
+			double levelOfmerging) {
+		LinkedList<EventProducer> newEventProd = new LinkedList<EventProducer>();
+
+		// Sort by parent id, and then by ascending address
+		Collections.sort(eventProdToMerge, new Comparator<EventProducer>() {
+			@Override
+			public int compare(final EventProducer arg0,
+					final EventProducer arg1) {
+				if (arg0.getParentId() == arg1.getParentId())
+					return arg0.getName().compareTo(arg1.getName());
+				else
+					return arg0.getParentId() - arg1.getParentId();
+			}
+		});
+
+		int newMemPageSize = (int) (memoryPageSize * (Math.pow(2.0, levelOfmerging)));
+		
+		for (int i = 0; i < eventProdToMerge.size() - 1; i += 2) {
+			try {
+				if (eventProdToMerge.get(i).getParentId() != eventProdToMerge
+						.get(i + 1).getParentId()) {
+					i--;
+					continue;
+				}
+
+				long addrEp1 = Long.valueOf(eventProdToMerge.get(i).getName());
+				long addrEp2 = Long.valueOf(eventProdToMerge.get(i + 1)
+						.getName());
+
+				// If we can merge them
+				if (addrEp2 - addrEp1 == newMemPageSize) {
+					// Create a new EP with lowest address as name
+					EventProducer newEP = createProducer(addrEp1,
+							eventProdToMerge.get(i).getParentId());
+					newEventProd.add(newEP);
+
+					// Update parent ID of previous producers
+					eventProdToMerge.get(i).setParentId(newEP.getId());
+					eventProdToMerge.get(i + 1).setParentId(newEP.getId());
+				} else {
+					// If the current pair was not a match, advance only of
+					// one
+					i--;
+				}
+			} catch (NumberFormatException e) {
+				continue;
+			}
+		}
+
+		System.err.println(levelOfmerging + ", " + newMemPageSize + ", " + newEventProd.size());
+		
+		levelOfmerging++;
+		if (levelOfmerging < maxLevelOfMerging)
+			newEventProd.addAll(mergeProducer(newEventProd, levelOfmerging));
+
+		return newEventProd;
 	}
 	
 }
