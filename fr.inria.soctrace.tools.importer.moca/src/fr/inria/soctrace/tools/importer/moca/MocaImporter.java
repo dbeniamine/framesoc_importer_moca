@@ -22,7 +22,6 @@ import java.util.regex.Pattern;
 
 import fr.inria.soctrace.framesoc.core.FramesocManager;
 import fr.inria.soctrace.framesoc.core.tools.management.PluginImporterJob;
-import fr.inria.soctrace.framesoc.core.tools.model.FileInput;
 import fr.inria.soctrace.framesoc.core.tools.model.FramesocTool;
 import fr.inria.soctrace.framesoc.core.tools.model.IFramesocToolInput;
 import fr.inria.soctrace.framesoc.core.tools.model.IPluginToolJobBody;
@@ -36,6 +35,7 @@ import fr.inria.soctrace.lib.utils.DeltaManager;
 import fr.inria.soctrace.tools.importer.moca.core.MocaConstants;
 import fr.inria.soctrace.tools.importer.moca.core.MocaConstants.MocaTraceType;
 import fr.inria.soctrace.tools.importer.moca.core.MocaParser;
+import fr.inria.soctrace.tools.importer.moca.input.MocaInput;
 
 /**
  * Moca importer tool.
@@ -54,10 +54,10 @@ public class MocaImporter extends FramesocTool {
 	 */
 	public class MocaImporterPluginJobBody implements IPluginToolJobBody {
 
-		private FileInput args;
+		private MocaInput input;
 
 		public MocaImporterPluginJobBody(IFramesocToolInput input) {
-			this.args = (FileInput) input;
+			this.input = (MocaInput) input;
 		}
 
 		@Override
@@ -65,12 +65,15 @@ public class MocaImporter extends FramesocTool {
 			DeltaManager delta = new DeltaManager();
 
 			logger.debug("Args: ");
-			List<String> files = args.getFiles();
+			List<String> files = input.getFiles();
 
 			for (String s : files) {
 				logger.debug(s);
 			}
 
+			boolean trimLoneEP = input.isTrimLonelyProducer();
+			int maxHierarchyDepth = input.getMaxHierarchyDepth();
+			
 			String pattern = Pattern
 					.quote(System.getProperty("file.separator"));
 
@@ -108,7 +111,7 @@ public class MocaImporter extends FramesocTool {
 				tracesDB.put(MocaTraceType.VIRTUAL_ADDRESSING, traceDBVirt);
 				tracesDB.put(MocaTraceType.PHYSICAL_ADDRESSING, traceDBPhys);
 				// parsing
-				MocaParser parser = new MocaParser(sysDB, tracesDB, files);
+				MocaParser parser = new MocaParser(sysDB, tracesDB, files, trimLoneEP, maxHierarchyDepth);
 				parser.parseTrace(monitor);
 
 				// close the traces DB and the system DB (commit)
@@ -153,7 +156,8 @@ public class MocaImporter extends FramesocTool {
 
 	@Override
 	public ParameterCheckStatus canLaunch(IFramesocToolInput input) {
-		FileInput args = (FileInput) input;
+		MocaInput args = (MocaInput) input;
+		
 		if (args.getFiles().size() < 1)
 			return new ParameterCheckStatus(false, "Not enough arguments.");
 

@@ -83,13 +83,16 @@ public class MocaParser {
 	
 	private int memoryPageSize = -1;
 	private int maxLevelOfMerging = 4;
+	private boolean trimLoneEventProducers;
 	
 	public MocaParser(SystemDBObject sysDB, HashMap<MocaTraceType, TraceDBObject> tracesDB,
-			List<String> traceFileName) {
+			List<String> traceFileName, boolean trimLoneEP, int maxLevelOfmerging) {
 
 		this.traceFiles = traceFileName;
 		this.sysDB = sysDB;
 		this.traceDB = tracesDB;
+		this.maxLevelOfMerging = maxLevelOfmerging;
+		this.trimLoneEventProducers = trimLoneEP;
 		activeTypes.addAll(traceDB.keySet());
 		initCollections();
 		
@@ -527,6 +530,10 @@ public class MocaParser {
 			System.err.println(aTraceType);
 			allProducers.get(aTraceType).addAll(
 					mergeProducer(allProducers.get(aTraceType), 0.0));
+			
+			// Do not trim if there was no merging
+			if(trimLoneEventProducers && maxLevelOfMerging > 0)
+				removeSingleNode(aTraceType);
 		}
 	}
 	
@@ -589,4 +596,37 @@ public class MocaParser {
 		return newEventProd;
 	}
 	
+	/**
+	 * Find and remove the event producers that have not been merged
+	 * 
+	 * @param aTraceType
+	 */
+	private void removeSingleNode(MocaTraceType aTraceType) {
+		// Event producers that are not a direct child of the root EP (or the
+		// root itself)
+		ArrayList<EventProducer> notRootChildren = new ArrayList<EventProducer>();
+		// Event producers that are direct children of the root EP
+		ArrayList<EventProducer> rootChildren = new ArrayList<EventProducer>();
+
+		for (EventProducer aProd : allProducers.get(aTraceType)) {
+			if (aProd.getParentId() == root.get(aTraceType).getId())
+				rootChildren.add(aProd);
+			else if (aProd.getId() != root.get(aTraceType).getId())
+				notRootChildren.add(aProd);
+		}
+
+		for (EventProducer aRootChild : rootChildren) {
+			boolean hasChild = false;
+			for (EventProducer aProd : notRootChildren) {
+				if (aProd.getParentId() == aRootChild.getId()) {
+					hasChild = true;
+					break;
+				}
+			}
+
+			if (!hasChild)
+				allProducers.get(aTraceType).remove(aRootChild);
+		}
+	}
+
 }

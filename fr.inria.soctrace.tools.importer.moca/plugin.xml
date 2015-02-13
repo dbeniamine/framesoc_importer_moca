@@ -11,5 +11,11 @@
             id="fr.inria.soctrace.tools.importer.moca">
       </tool>
    </extension>
-
+   <extension
+         point="fr.inria.soctrace.framesoc.ui.input.toolInput">
+      <toolInput
+            compositeFactory="fr.inria.soctrace.tools.importer.moca.input.MocaInputCompositeFactory"
+            toolId="fr.inria.soctrace.tools.importer.moca">
+      </toolInput>
+   </extension>
 </plugin>
