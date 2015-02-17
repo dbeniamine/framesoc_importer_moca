@@ -26,7 +26,7 @@ public class MocaConstants {
 	/**
 	 * Page size
 	 */
-	public static final int DB_PAGE_SIZE = 200000;
+	public static final int DB_PAGE_SIZE = 20000;
 
 	/**
 	 * Trace Type name
