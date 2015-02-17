@@ -760,6 +760,20 @@ public class MocaParser {
 			dividingFactor++;
 		}
 
+		// If we only found one as solution try to see if with the value 2, we
+		// can find a working solution with a smaller hierarchy depth (which
+		// means we will not necessarilly reach the wanted maxdepth for this
+		// group
+		if (dividingFactor == 1) {
+			// Try the first 10000 integer
+			for (int i = maxHierarchyDepth; i > 1; i--) {
+				if (Math.pow(2, i) < groupOfEP.size()) {
+					dividingFactor = 2;
+					break;
+				}
+			}
+		}
+
 		return dividingFactor;
 	}
 	
