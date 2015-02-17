@@ -70,6 +70,8 @@ public class MocaParser {
 	private Map<MocaTraceType, List<EventProducer>> currentProducers = new HashMap<MocaTraceType, List<EventProducer>>();
 	private Map<MocaTraceType, List<EventProducer>> allProducers = new HashMap<MocaTraceType, List<EventProducer>>();
 	private ArrayList<MocaTraceType> activeTypes = new ArrayList<MocaTraceType>();
+	private Map<MocaTraceType, List<List<EventProducer>>> consecutiveProducers = new HashMap<MocaTraceType, List<List<EventProducer>>>();
+	
 	
 	private int numberOfEvents = 0;
 	private int page = 0;
@@ -89,12 +91,13 @@ public class MocaParser {
 	private Long currStart = -1l, currEnd = -1l;
 	private Map<MocaTraceType, EventProducer> root = new HashMap<MocaTraceType, EventProducer>();
 	private Map<MocaTraceType, EventProducer> currentEP = new HashMap<MocaTraceType, EventProducer>();
+	// Removed event producers during the trimming steps
 	private Map<MocaTraceType, List<Long>> ignoredEventProd = new HashMap<MocaTraceType, List<Long>>();
 
 	private Map<MocaTraceType, List<Event>> eventList = new HashMap<MocaTraceType, List<Event>>();
 	
-	private int memoryPageSize = 4096;
-	private int maxLevelOfMerging = 4;
+	private int memoryPageSize = -1;
+	private int maxHierarchyDepth = 4;
 	private boolean trimLoneEventProducers;
 	
 	public MocaParser(SystemDBObject sysDB, HashMap<MocaTraceType, TraceDBObject> tracesDB,
@@ -103,7 +106,7 @@ public class MocaParser {
 		this.traceFiles = traceFileName;
 		this.sysDB = sysDB;
 		this.traceDB = tracesDB;
-		this.maxLevelOfMerging = maxLevelOfmerging;
+		this.maxHierarchyDepth = maxLevelOfmerging;
 		this.trimLoneEventProducers = trimLoneEP;
 		activeTypes.addAll(traceDB.keySet());
 		initCollections();
@@ -340,6 +343,8 @@ public class MocaParser {
 			traceDB.get(aTraceType).save(ep);
 		}
 
+		System.err.println("For trace type: " + aTraceType + ", " + eps.size()
+				+ " event producers were saved");
 		logger.debug("For trace type: " + aTraceType + ", " + eps.size()
 				+ " event producers were saved");
 		
@@ -359,8 +364,7 @@ public class MocaParser {
 
 		for (EventProducer ep : allProducers.get(currentTraceType)) {
 			try {
-				long newEpAddr = Long.parseLong(ep.getName());
-				if (addr == newEpAddr) {
+				if (String.valueOf(addr).equals(ep.getName())) {
 					return ep;
 				}
 			} catch (NumberFormatException e) {
@@ -397,32 +401,16 @@ public class MocaParser {
 	 * @return the newly created EP
 	 */
 	private EventProducer createProducer(long anAddress, int ppid) {
+		return createProducer(String.valueOf(anAddress), ppid);
+	}
+
+	private EventProducer createProducer(String aName, int ppid) {
 		EventProducer newEP = new EventProducer(epIdManager.getNextId());
 
-		newEP.setName(Long.toString(anAddress));
+		newEP.setName(aName);
 		newEP.setParentId(ppid);
 		newEP.setType("Memory Zone");
 		newEP.setLocalId(String.valueOf(newEP.getId()));
-
-		return newEP;
-	}
-
-	/**
-	 * Create an event prpducer for a specific trace type
-	 * 
-	 * @param anAddress
-	 *            producer name
-	 * @param currentTraceType
-	 * @return the newly created EP
-	 */
-	private EventProducer createProducer(long anAddress,
-			MocaTraceType currentTraceType) {
-		EventProducer newEP = createProducer(anAddress,
-				currentEP.get(currentTraceType).getId());
-		producersMap.get(currentTraceType).put(Long.toHexString(anAddress),
-				newEP);
-		currentProducers.get(currentTraceType).add(newEP);
-		allProducers.get(currentTraceType).add(newEP);
 
 		return newEP;
 	}
@@ -457,6 +445,8 @@ public class MocaParser {
 					continue;
 				
 				prod = findProducer(address, currentTraceType);
+				if(prod == null)
+					continue;
 
 				// Create one event for reads, one for writes
 				for (int type = MocaConstants.A_Type_Read; type <= MocaConstants.A_Type_Write; type++) {
@@ -521,13 +511,7 @@ public class MocaParser {
 						fields[MocaConstants.T_PID], ep);
 				allProducers.get(currentTraceType).add(ep);
 				currentEP.put(currentTraceType, ep);
-				
-				if(fields[MocaConstants.T_ID].equals(MocaConstants.TASK_ZERO))
-					memoryPageSize = Integer.valueOf(fields[MocaConstants.MEM_PAGE_SIZE]);
 
-				if (memoryPageSize == -1) {
-					logger.error("Error getting memory page size.");
-				}
 			}
 		}
 	}
@@ -551,115 +535,8 @@ public class MocaParser {
 			allProducers.put(aTraceType, new LinkedList<EventProducer>());
 			eventList.put(aTraceType, new LinkedList<Event>());
 			ignoredEventProd.put(aTraceType, new LinkedList<Long>());
+			consecutiveProducers.put(aTraceType, new LinkedList<List<EventProducer>>());
 		}
-	}
-
-	private void createIntermediateEP(MocaTraceType aTraceType) {
-			logger.debug(aTraceType.toString());
-			allProducers.get(aTraceType).addAll(
-					mergeProducer(allProducers.get(aTraceType), 0.0));
-			
-			// Do not trim if there was no merging
-			if(trimLoneEventProducers && maxLevelOfMerging > 0)
-				removeSingleNode(aTraceType);
-	}
-	
-	List<EventProducer> mergeProducer(List<EventProducer> eventProdToMerge,
-			double levelOfmerging) {
-		LinkedList<EventProducer> newEventProd = new LinkedList<EventProducer>();
-
-		// Sort by parent id, and then by ascending address
-		Collections.sort(eventProdToMerge, new Comparator<EventProducer>() {
-			@Override
-			public int compare(final EventProducer arg0,
-					final EventProducer arg1) {
-				if (arg0.getParentId() == arg1.getParentId())
-					return arg0.getName().compareTo(arg1.getName());
-				else
-					return arg0.getParentId() - arg1.getParentId();
-			}
-		});
-
-		int newMemPageSize = (int) (memoryPageSize * (Math.pow(2.0, levelOfmerging)));
-		
-		for (int i = 0; i < eventProdToMerge.size() - 1; i += 2) {
-			try {
-				if (eventProdToMerge.get(i).getParentId() != eventProdToMerge
-						.get(i + 1).getParentId()) {
-					i--;
-					continue;
-				}
-
-				long addrEp1 = Long.valueOf(eventProdToMerge.get(i).getName());
-				long addrEp2 = Long.valueOf(eventProdToMerge.get(i + 1)
-						.getName());
-
-				// If we can merge them
-				if (addrEp2 - addrEp1 == newMemPageSize) {
-					// Create a new EP with lowest address as name
-					EventProducer newEP = createProducer(addrEp1,
-							eventProdToMerge.get(i).getParentId());
-					newEventProd.add(newEP);
-
-					// Update parent ID of previous producers
-					eventProdToMerge.get(i).setParentId(newEP.getId());
-					eventProdToMerge.get(i + 1).setParentId(newEP.getId());
-				} else {
-					// If the current pair was not a match, advance only of
-					// one
-					i--;
-				}
-			} catch (NumberFormatException e) {
-				continue;
-			}
-		}
-
-		logger.debug(levelOfmerging + ", " + newMemPageSize + ", " + newEventProd.size());
-		
-		levelOfmerging++;
-		if (levelOfmerging < maxLevelOfMerging)
-			newEventProd.addAll(mergeProducer(newEventProd, levelOfmerging));
-
-		return newEventProd;
-	}
-	
-	/**
-	 * Find and remove the event producers that have not been merged
-	 * 
-	 * @param aTraceType
-	 */
-	private void removeSingleNode(MocaTraceType aTraceType) {
-		int removedEp = 0;
-		// Event producers that are not a direct child of the root EP (or the
-		// root itself)
-		ArrayList<EventProducer> notRootChildren = new ArrayList<EventProducer>();
-		// Event producers that are direct children of the root EP
-		ArrayList<EventProducer> rootChildren = new ArrayList<EventProducer>();
-
-		for (EventProducer aProd : allProducers.get(aTraceType)) {
-			if (aProd.getParentId() == root.get(aTraceType).getId())
-				rootChildren.add(aProd);
-			else if (aProd.getId() != root.get(aTraceType).getId())
-				notRootChildren.add(aProd);
-		}
-
-		for (EventProducer aRootChild : rootChildren) {
-			boolean hasChild = false;
-			for (EventProducer aProd : notRootChildren) {
-				if (aProd.getParentId() == aRootChild.getId()) {
-					hasChild = true;
-					break;
-				}
-			}
-
-			if (!hasChild) {
-				allProducers.get(aTraceType).remove(aRootChild);
-				ignoredEventProd.get(aTraceType).add(
-						Long.valueOf(aRootChild.getName()));
-				removedEp++;
-			}
-		}
-		logger.debug("Removed EPs: " + removedEp);
 	}
 	
 	private void parseEventProd(IProgressMonitor monitor, String aTraceFile) {
@@ -674,6 +551,8 @@ public class MocaParser {
 			virtual = true;
 		}
 
+		long previousAddress = - 1;
+		LinkedList<EventProducer> currentConsecutiveProducers = new LinkedList<EventProducer>();
 		LinkedList<EventProducer> newEventProd = new LinkedList<EventProducer>();
 		HashMap<Long, List<String>> producerTaskIndex = new HashMap<Long, List<String>>();
 		BufferedReader br;
@@ -682,7 +561,13 @@ public class MocaParser {
 					new FileInputStream(aTraceFile))));
 
 			String[] line;
-
+			// First line should be memory page size
+			line = getLine(br);
+			memoryPageSize = Integer.valueOf(line[0]);
+			
+			// init to a value we are sure is not consecutive to the first address
+			previousAddress = memoryPageSize - 1;
+			
 			while ((line = getLine(br)) != null) {
 				if (line.length <= 1)
 					continue;
@@ -692,25 +577,41 @@ public class MocaParser {
 				// Create a producer with root pid
 				EventProducer anEP = createProducer(addr,
 						root.get(currentTraceType).getId());
+				
 				if (currentTraceType == MocaTraceType.VIRTUAL_ADDRESSING
 						|| currentTraceType == MocaTraceType.PHYSICAL_ADDRESSING) {
 					newEventProd.add(anEP);
+				}
+				
+				// Is it consecutive?
+				if (previousAddress + memoryPageSize == addr) {
+					// Then add to current list
+					currentConsecutiveProducers.add(anEP);
+				} else if (!currentConsecutiveProducers.isEmpty()) {
+					// Else save the current list
+					consecutiveProducers.get(currentTraceType).add(
+							currentConsecutiveProducers);
+					// Start a new list
+					currentConsecutiveProducers = new LinkedList<EventProducer>();
+					// And add the current prod
+					currentConsecutiveProducers.add(anEP);
+				} else {
+					// The current list is empty, just add the EP
+					currentConsecutiveProducers.add(anEP);
 				}
 
 				for (int i = 1; i < line.length; i++) {
 					producerTaskIndex.get(addr).add(line[i]);
 				}
-			}
+				
+				// Update the previous address
+				previousAddress = addr;
+			}			
+			buildHierarchy(currentTraceType);
 
-			allProducers.get(currentTraceType).addAll(newEventProd);
-				//	mergeProducer(newEventProd, 0, currentTraceType,
-				//			new HashMap<EventProducer, LinkedList<Long>>()));
-			
-			createIntermediateEP(currentTraceType);
-			
+			// TODO
 			//createTaskEventProd(producerTaskIndex, virtual);
 			
-
 		} catch (FileNotFoundException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
@@ -720,5 +621,146 @@ public class MocaParser {
 		}
 	}
 	
+	/**
+	 * Expand the hierarchy for the current trace type
+	 * @param aTraceType
+	 */
+	private void buildHierarchy(MocaTraceType aTraceType) {
+		logger.debug(aTraceType.toString());
 
+		for (List<EventProducer> groupOfProducers : consecutiveProducers
+				.get(aTraceType)) {
+			// If only one EP in the group
+			if (groupOfProducers.size() == 1) {
+				if (trimLoneEventProducers) {
+					// Ignore it
+					ignoredEventProd.get(aTraceType).add(Long.valueOf(groupOfProducers.get(0).getName()));
+					continue;
+				} else {
+					// Just add it to the list
+					allProducers.get(aTraceType).addAll(groupOfProducers);
+				}
+			} else {
+				// Expand hierarchy
+				int dividingFactor = findDividingFactor(groupOfProducers);
+				if (dividingFactor > 0) {
+					allProducers.get(aTraceType).addAll(
+							createHierarchy(groupOfProducers, 0.0,
+									root.get(aTraceType).getId(),
+									dividingFactor));
+				} else {
+					allProducers.get(aTraceType).addAll(groupOfProducers);
+				}
+			}
+		}
+	}
+	
+	/**
+	 * Recursively expand the hierarchy tree, following a top-down approach, by
+	 * creating new event producers by merging consecutive EP
+	 * 
+	 * @param eventProdToMerge
+	 *            the list of event producer that are consecutive
+	 * @param currentHierarchyDepth
+	 * 		the current depth we are building in the hierarchy tree
+	 * @param ppid
+	 * the parent id of the created nodes
+	 * @param dividingFactor
+	 * the factor into which the result will be divided
+	 * @return the list of created event producers
+	 */
+	private List<EventProducer> createHierarchy(List<EventProducer> eventProdToMerge,
+			double currentHierarchyDepth, int ppid, int dividingFactor) {
+		LinkedList<EventProducer> newEventProd = new LinkedList<EventProducer>();
+
+		// Sort by ascending addresses
+		Collections.sort(eventProdToMerge, new Comparator<EventProducer>() {
+			@Override
+			public int compare(final EventProducer arg0,
+					final EventProducer arg1) {
+				return arg0.getName().compareTo(arg1.getName());
+			}
+		});
+
+		// Compute the size of a new group
+		int groupSize = eventProdToMerge.size() / dividingFactor;
+		int mergedProducers = 0;
+		int i;
+		
+		// Compute new group of EP
+		for (i = 0; i < eventProdToMerge.size() - groupSize; i = i + groupSize) {
+			EventProducer newNode = createProducer(eventProdToMerge.get(i)
+					.getName(), ppid);
+			newEventProd.add(newNode);
+			LinkedList<EventProducer> newSubGroup = new LinkedList<EventProducer>();
+
+			// Update the parent of leaves event prod
+			for (int j = i; j < i + groupSize; j++) {
+				eventProdToMerge.get(j).setParentId(newNode.getId());
+				newSubGroup.add(eventProdToMerge.get(j));
+			}
+
+			// Keep merging?
+			if (currentHierarchyDepth + 1 < maxHierarchyDepth && newSubGroup.size() >= dividingFactor && newSubGroup.size() > 1) {
+				newEventProd.addAll(createHierarchy(newSubGroup,
+						currentHierarchyDepth + 1, newNode.getId(), dividingFactor));
+			}
+
+			mergedProducers = i + groupSize;
+		}
+		
+		
+		int remainingEP = eventProdToMerge.size() - mergedProducers;
+		if (remainingEP == 1) {
+			newEventProd.add(eventProdToMerge.get(eventProdToMerge.size() - 1));
+		} else
+		// Check if some producer remains
+		if (mergedProducers < eventProdToMerge.size()) {
+			EventProducer newNode = createProducer(eventProdToMerge.get(i)
+					.getName(), ppid);
+			newEventProd.add(newNode);
+			LinkedList<EventProducer> newSubGroup = new LinkedList<EventProducer>();
+
+			for (i = mergedProducers; i < eventProdToMerge.size(); i++) {
+				eventProdToMerge.get(i).setParentId(newNode.getId());
+				newSubGroup.add(eventProdToMerge.get(i));
+			}
+
+			if (currentHierarchyDepth + 1 < maxHierarchyDepth
+					&& newSubGroup.size() >= dividingFactor
+					&& newSubGroup.size() > 1 && dividingFactor > 1) {
+				newEventProd.addAll(createHierarchy(newSubGroup,
+						currentHierarchyDepth + 1, newNode.getId(), dividingFactor));
+			} else {
+					newEventProd.addAll(newSubGroup);
+			}
+		}
+
+		logger.debug(currentHierarchyDepth + ", " + newEventProd.size());
+		return newEventProd;
+	}
+
+	/**
+	 * Given the size of a group of event producers and the depth of the
+	 * hierarchy we want to achieve, find the dividing factor for the group of
+	 * EP such that we have a regular hierarchy tree
+	 * 
+	 * @param groupOfEP
+	 *            the group of EP to merge
+	 * @return the found dividing factor
+	 */
+	private int findDividingFactor(List<EventProducer> groupOfEP) {
+		int dividingFactor = 0;
+
+		// Try the first 10000 integer
+		for (int i = 1; i <= 10000; i++) {
+			if (Math.pow(i, maxHierarchyDepth) > groupOfEP.size()) {
+				break;
+			}
+			dividingFactor++;
+		}
+
+		return dividingFactor;
+	}
+	
 }
