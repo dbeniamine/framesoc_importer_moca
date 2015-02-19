@@ -31,7 +31,7 @@ public class MocaConstants {
 	/**
 	 * Trace Type name
 	 */
-	public static final String TRACE_TYPE = "moca";
+	public static final String TRACE_TYPE = "Moca";
 	public static final String TRACE_EXT = ".log";
 	public static final String TRACE_FILE_TYPE = "Moca-task";
 
@@ -92,7 +92,7 @@ public class MocaConstants {
 	public static final int A_Type_Private = 0;
 	public static final int A_Type_Shared = 2;
 
-	/** Acces event type and params */
+	/** Access event type and params */
 	public static final String[] ACCESS_EVENTS = { "Private Read",
 			"Private Write", "Shared Read", "Shared Write" };
 

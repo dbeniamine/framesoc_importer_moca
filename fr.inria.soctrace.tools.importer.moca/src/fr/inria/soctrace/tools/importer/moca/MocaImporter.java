@@ -86,8 +86,16 @@ public class MocaImporter extends FramesocTool {
 			String t2 = t[t.length - 1];
 			if (t2.endsWith(MocaConstants.TRACE_EXT))
 				t2 = t2.replace(MocaConstants.TRACE_EXT, "");
+			String traceName;
+			
+			// Set trace name as the directory name
+			if (t.length - 2 >= 0)
+				traceName = t[t.length - 2];
+			else
+				traceName = "Moca";
+				
 			String traceDbName = FramesocManager.getInstance().getTraceDBName(
-					t2);
+					traceName);
 
 			SystemDBObject sysDB = null;
 			HashMap<MocaTraceType, TraceDBObject> tracesDB = new HashMap<MocaTraceType, TraceDBObject>();
