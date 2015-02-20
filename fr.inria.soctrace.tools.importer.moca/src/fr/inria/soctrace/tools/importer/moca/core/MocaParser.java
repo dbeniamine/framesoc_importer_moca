@@ -233,11 +233,6 @@ public class MocaParser {
 					new DataInputStream(new FileInputStream(aTraceFile))));
 			String[] line;
 			MocaLineParser parser;
-			//for (MocaTraceType aTraceType : activeTypes)
-				//if (aTraceType != MocaTraceType.PHYSICAL_ADDRESSING
-				//		&& aTraceType != MocaTraceType.VIRTUAL_ADDRESSING)
-					//currentProducers.put(aTraceType,
-					//		new LinkedList<EventProducer>());
 
 			while ((line = getLine(br)) != null) {
 
@@ -420,9 +415,15 @@ public class MocaParser {
 
 	private class AccessParser implements MocaLineParser {
 		public void parseLine(String[] fields) throws SoCTraceException {
+
 			// 1 if the access is shared among threads, 0 else
-			int shared_type = isShared(Integer.parseInt(
-					fields[MocaConstants.A_CPUMask], 2));
+			// int shared_type = isShared(Integer.parseInt(
+			//		fields[MocaConstants.A_CPUMask], 2));
+			
+			// 1 if the access is shared among threads, 0 else
+			int shared_type = 0;
+			if (fields.length >= 7)
+				shared_type = 1;
 			
 			// Number of read, write	
 			double access_nbr[] = {
@@ -449,8 +450,9 @@ public class MocaParser {
 				
 				prod = findProducer(address, currentTraceType);
 				if (prod == null) {
-					logger.error("Could not finc the Event Producer with address: "
-							+ address);
+					if (!trimLoneEventProducers)
+						logger.error("Could not find the Event Producer with address: "
+								+ address);
 					continue;
 				}
 
