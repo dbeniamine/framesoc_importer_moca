@@ -43,6 +43,7 @@ public class MocaConstants {
 	public static final String ACCESS = "Access";
 	
 	// Task ID PID
+	public static final int TASK_NAME = 0;
 	public static final int T_ID = 1;
 	public static final int T_PID = 2;
 	public static final int MEM_PAGE_SIZE = 3;
@@ -100,6 +101,10 @@ public class MocaConstants {
 	public static final String[] ACCESS_PARAM_TYPES = { "INTEGER", "INTEGER",
 			"STRING", "INTEGER", "INTEGER" };
 
+	// Root name
+	public static final String TASK_ROOT_NAME = "Moca Launcher";
+	public static final String MEMORY_ROOT_NAME = "MemoryRoot";	
+	
 	/**
 	 * Time shift exponent (nanoseconds)
 	 */
