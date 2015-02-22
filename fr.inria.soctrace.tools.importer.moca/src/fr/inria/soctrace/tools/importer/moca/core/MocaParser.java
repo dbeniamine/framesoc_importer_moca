@@ -24,9 +24,11 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.commons.io.FilenameUtils;
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -65,6 +67,7 @@ public class MocaParser {
 	private List<String> traceFiles;
 
 	private Map<String, EventType> types = new HashMap<String, EventType>();
+	private Set<Long> sharedAddress= new HashSet<Long>();
 	private Map<String, MocaLineParser> parserMap = new HashMap<String, MocaLineParser>();
 	private Map<MocaTraceType, List<EventProducer>> allProducers = new HashMap<MocaTraceType, List<EventProducer>>();
 	private List<MocaTraceType> activeTypes = new ArrayList<MocaTraceType>();
@@ -375,17 +378,9 @@ public class MocaParser {
 	}
 
 	// Return 1 if access is shared, 0 else
-	private int isShared(int cpuMask) {
-		int m = 1, nth = 0;
-		while (m <= cpuMask) {
-			if ((m & cpuMask) == m) {
-				nth++;
-				if (nth > 1)
-					return MocaConstants.A_Type_Shared;
-			}
-			m = m << 1;
-		}
-		
+	private int isShared(long address) {
+		if(sharedAddress.contains(address))
+				return MocaConstants.A_Type_Shared;
 		return MocaConstants.A_Type_Private;
 	}
 	
@@ -416,14 +411,9 @@ public class MocaParser {
 	private class AccessParser implements MocaLineParser {
 		public void parseLine(String[] fields) throws SoCTraceException {
 
-			// 1 if the access is shared among threads, 0 else
-			// int shared_type = isShared(Integer.parseInt(
-			//		fields[MocaConstants.A_CPUMask], 2));
 			
 			// 1 if the access is shared among threads, 0 else
 			int shared_type = 0;
-			if (fields.length >= 7)
-				shared_type = 1;
 			
 			// Number of read, write	
 			double access_nbr[] = {
@@ -442,7 +432,8 @@ public class MocaParser {
 					address = Long.parseLong(fields[MocaConstants.A_PhysAddr],
 							16);
 				}
-
+				shared_type=isShared(address);
+				
 				// If the event producer was removed
 				if(ignoredEventProd.get(currentTraceType).contains(address))
 					// Ignore the event
@@ -600,13 +591,15 @@ public class MocaParser {
 					currentConsecutiveProducers.add(anEP);
 				}
 				
-
+				
 				for (int i = 1; i < line.length; i++) {
 					if(!producerTaskIndex.containsKey(line[i]))
 						producerTaskIndex.put(line[i], new LinkedList<String>());
 					
 					producerTaskIndex.get(line[i]).add(String.valueOf(addr));
 				}
+				if (line.length > 2)
+					sharedAddress.add(addr);
 				
 				// Update the previous address
 				previousAddress = addr;
