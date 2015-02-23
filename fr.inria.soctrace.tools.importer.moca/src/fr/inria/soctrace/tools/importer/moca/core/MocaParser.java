@@ -379,8 +379,9 @@ public class MocaParser {
 
 	// Return 1 if access is shared, 0 else
 	private int isShared(long address) {
-		if(sharedAddress.contains(address))
-				return MocaConstants.A_Type_Shared;
+		if (sharedAddress.contains(address))
+			return MocaConstants.A_Type_Shared;
+		
 		return MocaConstants.A_Type_Private;
 	}
 	
@@ -432,7 +433,7 @@ public class MocaParser {
 					address = Long.parseLong(fields[MocaConstants.A_PhysAddr],
 							16);
 				}
-				shared_type=isShared(address);
+				shared_type = isShared(address);
 				
 				// If the event producer was removed
 				if(ignoredEventProd.get(currentTraceType).contains(address))
@@ -542,7 +543,7 @@ public class MocaParser {
 			virtual = true;
 		}
 
-		long previousAddress = - 1;
+		long previousAddress = -1;
 		LinkedList<EventProducer> currentConsecutiveProducers = new LinkedList<EventProducer>();
 		LinkedList<EventProducer> newEventProd = new LinkedList<EventProducer>();
 		HashMap<String, List<String>> producerTaskIndex = new HashMap<String, List<String>>();
@@ -665,15 +666,16 @@ public class MocaParser {
 	 * @param eventProdToMerge
 	 *            the list of event producer that are consecutive
 	 * @param currentHierarchyDepth
-	 * 		the current depth we are building in the hierarchy tree
+	 *            the current depth we are building in the hierarchy tree
 	 * @param ppid
-	 * the parent id of the created nodes
+	 *            the parent id of the created nodes
 	 * @param dividingFactor
-	 * the factor into which the result will be divided
+	 *            the factor into which the result will be divided
 	 * @return the list of created event producers
 	 */
-	private List<EventProducer> createHierarchy(List<EventProducer> eventProdToMerge,
-			double currentHierarchyDepth, int ppid, int dividingFactor) {
+	private List<EventProducer> createHierarchy(
+			List<EventProducer> eventProdToMerge, double currentHierarchyDepth,
+			int ppid, int dividingFactor) {
 		LinkedList<EventProducer> newEventProd = new LinkedList<EventProducer>();
 
 		// Sort by ascending addresses
@@ -684,16 +686,24 @@ public class MocaParser {
 				return arg0.getName().compareTo(arg1.getName());
 			}
 		});
+
+		int groupSize;
 		
-		// Compute the size of a new group
-		int groupSize = eventProdToMerge.size() / dividingFactor;
+		// If first hierarchy depth
+		if (currentHierarchyDepth == 0.0)
+			// Do not split, just create a super producer representing the whole
+			// group
+			groupSize = eventProdToMerge.size();
+		else
+			// Compute the size of a new group
+			groupSize = eventProdToMerge.size() / dividingFactor;
+
+		if (groupSize <= 1) 
+			return eventProdToMerge;
+		
 		int mergedProducers = 0;
 		int i;
 
-		if (groupSize <= 1) {
-			return eventProdToMerge;
-		}
-		
 		// Compute new group of EP
 		for (i = 0; i < eventProdToMerge.size() - groupSize; i = i + groupSize) {
 			EventProducer newNode = createProducer(eventProdToMerge.get(i)
@@ -717,7 +727,7 @@ public class MocaParser {
 			}
 			mergedProducers = i + groupSize;
 		}
-		
+
 		int remainingEP = eventProdToMerge.size() - mergedProducers;
 		if (remainingEP == 1) {
 			newEventProd.add(eventProdToMerge.get(eventProdToMerge.size() - 1));
@@ -725,7 +735,7 @@ public class MocaParser {
 		// Check if some producer remains
 		if (mergedProducers < eventProdToMerge.size()) {
 			EventProducer newNode = createProducer(eventProdToMerge.get(i)
-					.getName()+ "_" + (int) currentHierarchyDepth, ppid);
+					.getName() + "_" + (int) currentHierarchyDepth, ppid);
 			newEventProd.add(newNode);
 			LinkedList<EventProducer> newSubGroup = new LinkedList<EventProducer>();
 
@@ -738,9 +748,10 @@ public class MocaParser {
 					&& newSubGroup.size() >= dividingFactor
 					&& newSubGroup.size() > 1 && dividingFactor > 1) {
 				newEventProd.addAll(createHierarchy(newSubGroup,
-						currentHierarchyDepth + 1, newNode.getId(), dividingFactor));
+						currentHierarchyDepth + 1, newNode.getId(),
+						dividingFactor));
 			} else {
-					newEventProd.addAll(newSubGroup);
+				newEventProd.addAll(newSubGroup);
 			}
 		}
 
@@ -784,8 +795,9 @@ public class MocaParser {
 
 		return dividingFactor;
 	}
-	
-	private void createTaskEventProd(HashMap<String, List<String>> producerTaskIndex, boolean virtual){
+
+	private void createTaskEventProd(
+			HashMap<String, List<String>> producerTaskIndex, boolean virtual) {
 		MocaTraceType currentTraceType;
 		MocaTraceType nonTaskTraceType;
 		if (!virtual) {
@@ -801,9 +813,10 @@ public class MocaParser {
 					root.get(currentTraceType).getId());
 			taskProducer.setType("Task Producer");
 			allProducers.get(currentTraceType).add(taskProducer);
-			// Index keeping track of the correspondence between ancient and new producers
+			// Index keeping track of the correspondence between ancient and new
+			// producers
 			HashMap<Integer, EventProducer> parentIndex = new HashMap<Integer, EventProducer>();
-			List<EventProducer> newProducers = new LinkedList<EventProducer> ();
+			List<EventProducer> newProducers = new LinkedList<EventProducer>();
 			taskProducersIndex.get(currentTraceType).put(aTask,
 					new HashMap<String, EventProducer>());
 			taskProducersIndex.get(currentTraceType).get(aTask)
@@ -823,7 +836,7 @@ public class MocaParser {
 							taskProducer);
 				}
 			}
-			
+
 			// Set the parent ID
 			for (EventProducer aProd : newProducers) {
 				// Don't update root
@@ -839,11 +852,11 @@ public class MocaParser {
 					}
 				}
 			}
-			
+
 			for (EventProducer aProd : newProducers)
 				taskProducersIndex.get(currentTraceType).get(aTask)
 						.put(aProd.getName(), aProd);
-			
+
 			allProducers.get(currentTraceType).addAll(newProducers);
 		}
 	}
