@@ -38,9 +38,9 @@ public class MocaConstants {
 	/**
 	 * Entity labels
 	 */
-	public static final String TASK = "Task";
-	public static final String CHUNK = "Chunk";
-	public static final String ACCESS = "Access";
+	public static final String TASK = "T";
+	public static final String CHUNK = "C";
+	public static final String ACCESS = "A";
 	
 	// Task ID PID
 	public static final int TASK_NAME = 0;

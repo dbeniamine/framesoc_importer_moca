@@ -25,9 +25,11 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
 
 import org.apache.commons.io.FilenameUtils;
@@ -240,9 +242,7 @@ public class MocaParser {
 			while ((line = getLine(br)) != null) {
 
 				logger.debug(Arrays.toString(line));
-				// if the line isn't recognized, assume it is a debug line or a
-				// valgrind stuff
-				if ((parser = parserMap.get(line[MocaConstants.ENTITY])) != null)
+				if ((parser = parserMap.get(line[MocaConstants.ENTITY].substring(0, 1))) != null)
 					parser.parseLine(line);
 
 				for (MocaTraceType currentTraceType : activeTypes) {
@@ -592,7 +592,7 @@ public class MocaParser {
 					currentConsecutiveProducers.add(anEP);
 				}
 				
-				
+				//TODO: same hierarchie for all pids
 				for (int i = 1; i < line.length; i++) {
 					if(!producerTaskIndex.containsKey(line[i]))
 						producerTaskIndex.put(line[i], new LinkedList<String>());
