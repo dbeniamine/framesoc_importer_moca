@@ -74,8 +74,8 @@ public class MocaConstants {
 			"INTEGER", "INTEGER" };
 
 	// Access AddrVirtual AddrPhysique Start End CPUMask
-	public static final int A_VirtAddr = 1;
-	public static final int A_PhysAddr = 2;
+	public static final int A_PhysAddr = 1;
+	public static final int A_VirtAddr = 2;
 	public static final int A_NReads = 3;
 	public static final int A_NWrites = 4;
 	public static final int A_CPUMask = 5;

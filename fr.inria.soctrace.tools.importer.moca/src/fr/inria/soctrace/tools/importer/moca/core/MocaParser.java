@@ -25,11 +25,9 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Set;
 
 import org.apache.commons.io.FilenameUtils;
@@ -81,10 +79,13 @@ public class MocaParser {
 	private IdManager etIdManager = new IdManager();
 	private IdManager epIdManager = new IdManager();
 	private IdManager eptIdManager = new IdManager();
-	private void saveTraceMetadata(MocaTraceType aTraceType) throws SoCTraceException {
-		String alias = FilenameUtils.getBaseName(traceDB.get(aTraceType).getDBName());
-		MocaTraceMetadata metadata = new MocaTraceMetadata(sysDB,
-				traceDB.get(aTraceType).getDBName(), alias, numberOfEvents);
+	
+	private void saveTraceMetadata(MocaTraceType aTraceType)
+			throws SoCTraceException {
+		String alias = FilenameUtils.getBaseName(traceDB.get(aTraceType)
+				.getDBName());
+		MocaTraceMetadata metadata = new MocaTraceMetadata(sysDB, traceDB.get(
+				aTraceType).getDBName(), alias, numberOfEvents);
 		metadata.createMetadata();
 		metadata.saveMetadata();
 		sysDB.commit();
@@ -412,7 +413,6 @@ public class MocaParser {
 	private class AccessParser implements MocaLineParser {
 		public void parseLine(String[] fields) throws SoCTraceException {
 
-			
 			// 1 if the access is shared among threads, 0 else
 			int shared_type = 0;
 			
@@ -426,7 +426,8 @@ public class MocaParser {
 				EventProducer prod;
 				long address;
 
-				if (currentTraceType == MocaTraceType.TASK_VIRTUAL_ADDRESSING) {
+				if (currentTraceType == MocaTraceType.TASK_VIRTUAL_ADDRESSING
+						|| currentTraceType == MocaTraceType.VIRTUAL_ADDRESSING) {
 					address = Long.parseLong(fields[MocaConstants.A_VirtAddr],
 							16);
 				} else {
@@ -545,7 +546,6 @@ public class MocaParser {
 
 		long previousAddress = -1;
 		LinkedList<EventProducer> currentConsecutiveProducers = new LinkedList<EventProducer>();
-		LinkedList<EventProducer> newEventProd = new LinkedList<EventProducer>();
 		HashMap<String, List<String>> producerTaskIndex = new HashMap<String, List<String>>();
 		BufferedReader br;
 		try {
@@ -565,30 +565,24 @@ public class MocaParser {
 					continue;
 
 				long addr = Long.valueOf(line[0], 16);
-
+				
 				// Create a producer with root pid
 				EventProducer anEP = createProducer(addr,
 						root.get(currentTraceType).getId());
-						
-				if (currentTraceType == MocaTraceType.VIRTUAL_ADDRESSING
-						|| currentTraceType == MocaTraceType.PHYSICAL_ADDRESSING) {
-					newEventProd.add(anEP);
-				}
 				
 				// Is it consecutive?
 				if (previousAddress + memoryPageSize == addr) {
 					// Then add to current list
 					currentConsecutiveProducers.add(anEP);
-				} else if (!currentConsecutiveProducers.isEmpty()) {
-					// Else save the current list
-					consecutiveProducers.get(currentTraceType).add(
-							currentConsecutiveProducers);
-					// Start a new list
-					currentConsecutiveProducers = new LinkedList<EventProducer>();
-					// And add the current prod
-					currentConsecutiveProducers.add(anEP);
 				} else {
-					// The current list is empty, just add the EP
+					if (!currentConsecutiveProducers.isEmpty()) {
+						// Else save the current list
+						consecutiveProducers.get(currentTraceType).add(
+								currentConsecutiveProducers);
+						// Start a new list
+						currentConsecutiveProducers = new LinkedList<EventProducer>();
+					}
+					// And add the current prod
 					currentConsecutiveProducers.add(anEP);
 				}
 				
@@ -655,8 +649,10 @@ public class MocaParser {
 		}
 		
 		// Build Index
-		for (EventProducer aProd : allProducers.get(aTraceType))
+		for (EventProducer aProd : allProducers.get(aTraceType)) {
 			producersIndex.get(aTraceType).put(aProd.getName(), aProd);
+		}
+		
 	}
 	
 	/**
@@ -725,10 +721,14 @@ public class MocaParser {
 						currentHierarchyDepth + 1, newNode.getId(),
 						dividingFactor));
 			}
+			else {
+				newEventProd.addAll(newSubGroup);
+			}
 			mergedProducers = i + groupSize;
 		}
 
 		int remainingEP = eventProdToMerge.size() - mergedProducers;
+
 		if (remainingEP == 1) {
 			newEventProd.add(eventProdToMerge.get(eventProdToMerge.size() - 1));
 		} else
