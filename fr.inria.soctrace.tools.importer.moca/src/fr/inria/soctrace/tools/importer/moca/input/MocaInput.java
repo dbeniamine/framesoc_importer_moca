@@ -8,7 +8,7 @@ public class MocaInput implements IFramesocToolInput {
 	
 	protected List<String> files;
 	private boolean trimLonelyProducer = false;
-	private int maxHierarchyDepth = 4;
+	private int maxHierarchyDepth = 16;
 
 	@Override
 	public String getCommand() {

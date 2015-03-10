@@ -19,7 +19,7 @@ import fr.inria.soctrace.framesoc.ui.listeners.LaunchTextListener;
 public class MocaInputComposite extends DefaultImporterInputComposite {
 	
 	private boolean trimLonelyProducer = false;
-	private int maxHierarchyDepth = 4;
+	private int maxHierarchyDepth = 16;
 	
 	public MocaInputComposite(Composite parent, int style) {
 		super(parent, style);
