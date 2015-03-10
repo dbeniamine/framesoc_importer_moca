@@ -563,8 +563,14 @@ public class MocaParser {
 			while ((line = getLine(br)) != null) {
 				if (line.length <= 1)
 					continue;
-
-				long addr = Long.valueOf(line[0], 16);
+				long addr;
+				//New files have event producer in base 10, the try/catch is for importing old traces
+				try{
+					addr = Long.valueOf(line[0]);
+				}catch(NumberFormatException ex)
+				{
+					addr=Long.valueOf(line[0], 16);
+				}
 				
 				// Create a producer with root pid
 				EventProducer anEP = createProducer(addr,
