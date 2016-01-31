@@ -114,8 +114,8 @@ public class MocaImporter extends FramesocTool {
 				traceDBPhys = new TraceDBObject(traceDbName + "_Physical",
 						DBMode.DB_CREATE);
 				
-				tracesDB.put(MocaTraceType.TASK_VIRTUAL_ADDRESSING, traceDBTaskVirt);
-				tracesDB.put(MocaTraceType.TASK_PHYSICAL_ADDRESSING, traceDBTaskPhys);
+//				tracesDB.put(MocaTraceType.TASK_VIRTUAL_ADDRESSING, traceDBTaskVirt);
+//				tracesDB.put(MocaTraceType.TASK_PHYSICAL_ADDRESSING, traceDBTaskPhys);
 				tracesDB.put(MocaTraceType.VIRTUAL_ADDRESSING, traceDBVirt);
 				tracesDB.put(MocaTraceType.PHYSICAL_ADDRESSING, traceDBPhys);
 				// parsing
