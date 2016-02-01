@@ -25,9 +25,11 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Set;
 
 import org.apache.commons.io.FilenameUtils;
@@ -66,7 +68,7 @@ public class MocaParser {
 	private SystemDBObject sysDB;
 	// Traces DB for each type of traces
 	private Map<MocaTraceType, TraceDBObject> traceDB =  new HashMap<MocaTraceType, TraceDBObject>();
-	// Virtual / Physical producers, full trace,TODO: structures, stacks
+	// Virtual / Physical producers, full trace, structures, stacks
 	private List<String> traceFiles;
 
 	
@@ -79,13 +81,53 @@ public class MocaParser {
 	private List<MocaTraceType> activeTypes = new ArrayList<MocaTraceType>();
 	// List of list of consecutive addresses to build hierarchy, one for each trace type
 	private Map<MocaTraceType, List<List<EventProducer>>> consecutiveProducers = new HashMap<MocaTraceType, List<List<EventProducer>>>();
-	
 	private int numberOfEvents = 0;
 	private int page = 0;
 	private IdManager eIdManager = new IdManager();
 	private IdManager etIdManager = new IdManager();
 	private IdManager epIdManager = new IdManager();
 	private IdManager eptIdManager = new IdManager();
+
+	// Data structures and stacks
+	private class DataStruct implements Comparable<DataStruct>{
+		private Long start;
+		private Long end;
+		private EventProducer EP;
+		public DataStruct(Long start, Long end, String name,
+				EventProducer eP) {
+			super();
+			this.start = start;
+			this.end = end;
+			EP = eP;
+		}
+		@Override
+		public int compareTo(DataStruct o) {
+			long delta=this.start-o.start;
+			if(delta < 0)
+				return -1;
+			if(delta > 0)
+				return 1;
+			return 0;
+		}
+		/*
+		 * Returns -1 if addr is before the structure
+		 * 		    0 if addr is in the structure
+		 * 			1 if addr is after the structure
+		 */
+		public int relativePosTo(long addr) {
+			if(addr < start)
+				return -1;
+			if(addr > end)
+				return 1;
+			return 0;
+		}
+		public EventProducer getEP() {
+			return this.EP;
+		}
+	}
+	
+	private List<DataStruct> dataStructures = new ArrayList<DataStruct>();
+	private List<String> structFiles = new ArrayList<String>();
 
 	
 	private void saveTraceMetadata(MocaTraceType aTraceType)
@@ -101,7 +143,6 @@ public class MocaParser {
 
 	private Long currStart = -1l, currEnd = -1l;
 	private Map<MocaTraceType, EventProducer> root = new HashMap<MocaTraceType, EventProducer>();
-//	private Map<MocaTraceType, EventProducer> currentEP = new HashMap<MocaTraceType, EventProducer>();
 	// Removed event producers during the trimming steps
 	private Map<MocaTraceType, List<Long>> ignoredEventProd = new HashMap<MocaTraceType, List<Long>>();
 	private Map<MocaTraceType, List<Event>> eventList = new HashMap<MocaTraceType, List<Event>>();
@@ -109,13 +150,11 @@ public class MocaParser {
 	private Map<MocaTraceType, Map<String, EventProducer>> producersIndex = new HashMap<MocaTraceType, Map<String, EventProducer>>();
 	private Map<MocaTraceType, Map<String, Map<String, EventProducer>>> taskProducersIndex = new HashMap<MocaTraceType, Map<String, Map<String, EventProducer>>>();
 	
-//	private String currentTask;
 	private int memoryPageSize = -1;
 	private int maxHierarchyDepth = 4;
 	private int numThreads=0;
 	private boolean trimLoneEventProducers;
 	private MocaLineParser Rawparser = new CSVParser();
-
 	
 	public MocaParser(SystemDBObject sysDB, HashMap<MocaTraceType, TraceDBObject> tracesDB,
 			List<String> traceFileName, boolean trimLoneEP, int maxLevelOfmerging) {
@@ -127,29 +166,6 @@ public class MocaParser {
 		this.trimLoneEventProducers = trimLoneEP;
 		activeTypes.addAll(traceDB.keySet());
 		initCollections();
-		
-		// Add the different parser
-		//parserMap.put(MocaConstants.TASK, new TaskParser());
-		//parserMap.put(MocaConstants.ACCESS, new AccessParser());
-		//parserMap.put(MocaConstants.CHUNK, new ChunkParser());
-
-
-		// Create New Structure events 
-//		EventType et = new EventType(etIdManager.getNextId(),
-//				EventCategory.PUNCTUAL_EVENT);
-//		et.setName(MocaConstants.NEW_CHUNK_EVENT);
-
-		// and all the associated param types 
-//		EventParamType ept;
-//		for (int i = 0; i < MocaConstants.NEW_CHUNK_PARAM.length; i++) {
-//			ept = new EventParamType(eptIdManager.getNextId());
-//			ept.setEventType(et);
-//			ept.setName(MocaConstants.NEW_CHUNK_PARAM[i]);
-//			ept.setType(MocaConstants.NEW_CHUNK_PARAM_TYPES[i]);
-//		}
-//		types.put(et.getName(), et);
-
-
 		
 		for (MocaTraceType aTraceType : activeTypes) {
 			EventProducer rootEp = new EventProducer(epIdManager.getNextId());
@@ -183,10 +199,27 @@ public class MocaParser {
 		
 		for (String aTraceFile : traceFiles) {
 			// If trace info file type
-			if(aTraceFile.contains(MocaConstants.TRACE_FILE_TYPE))
+			if(aTraceFile.contains(MocaConstants.TRACE_FILE_TYPE)) //Main trace
 				eventFiles.add(aTraceFile);
+			else if(aTraceFile.contains(MocaConstants.STRUCT_FILE_TYPE)
+					|| aTraceFile.contains(MocaConstants.STACK_FILE_TYPE)) //Structs and stacks
+					structFiles.add(aTraceFile);
 			else
 				producerFiles.add(aTraceFile);
+		}
+		
+		for (String aTraceFile : structFiles) {
+			monitor.subTask(aTraceFile + ": Building data structures Event Producers...");
+			parseStructs(monitor, aTraceFile);
+			monitor.worked(1);
+		}
+
+		if (monitor.isCanceled()) {
+			for (TraceDBObject aTraceDB : traceDB.values())
+				aTraceDB.dropDatabase();
+
+			sysDB.rollback();
+			return;
 		}
 
 		for (String aTraceFile : producerFiles) {
@@ -376,14 +409,6 @@ public class MocaParser {
 				return null;
 			}
 	}
-
-	// Return 1 if access is shared, 0 else
-//	private int isShared(long address) {
-//		if (sharedAddress.contains(address))
-//			return MocaConstants.A_Type_Shared;
-//		
-//		return MocaConstants.A_Type_Private;
-//	}
 	
 	/**
 	 * Create a new event producer
@@ -413,40 +438,14 @@ public class MocaParser {
 	private class CSVParser implements MocaLineParser {
 		public void parseLine(String[] fields) throws SoCTraceException {
 
-			// 1 if the access is shared among threads, 0 else
-			//int shared_type = 0;
 			// Remove whitespaces
 			for(int i=0; i < fields.length; i++) {
 				fields[i]=fields[i].trim();
 			}
 			int tid=Integer.parseInt(fields[MocaConstants.A_Tid]);
 
-			// Are we In the same chunk ?
-//			if(currStart!= Long.parseLong(fields[MocaConstants.A_Start]) || currEnd != Long.parseLong(fields[MocaConstants.A_End])
-//					|| currentTask != "task" + tid){
-//				currentTask = "task" + tid;
-////				if(currentEP.get(currentTask) == null){
-//					// New task
-//					for (MocaTraceType currentTraceType : activeTypes) {
-//						if (currentTraceType == MocaTraceType.VIRTUAL_ADDRESSING
-//								|| currentTraceType == MocaTraceType.PHYSICAL_ADDRESSING) {
-//							currentEP.put(currentTraceType, root.get(currentTraceType));
-//							continue;
-//						}
-//						
-//						// Update the task event producer
-//						EventProducer ep = taskProducersIndex.get(currentTraceType).get(currentTask).get(currentTask);
-//						ep.setName(currentTask);
-//						ep.setType(MocaConstants.TASK);
-//						ep.setLocalId(String.valueOf(ep.getId()));
-//						
-//						currentEP.put(currentTraceType, ep);
-//					}
-//				}
-				// New chunk
-				currStart = Long.parseLong(fields[MocaConstants.A_Start]);
-				currEnd = Long.parseLong(fields[MocaConstants.A_End]);
-//			}
+			currStart = Long.parseLong(fields[MocaConstants.A_Start]);
+			currEnd = Long.parseLong(fields[MocaConstants.A_End]);
 			
 			// Number of read, write	
 			double access_nbr[] = {
@@ -465,7 +464,6 @@ public class MocaParser {
 					address = Long.parseLong(fields[MocaConstants.A_PhysAddr],
 							16);
 				}
-//				shared_type = isShared(address);
 				
 				// If the event producer was removed
 				if(ignoredEventProd.get(currentTraceType).contains(address))
@@ -537,16 +535,72 @@ public class MocaParser {
 		return type+"_T"+tid;
 	}
 	
+	/*
+	 * Parse Data structures
+	 */
+	private void parseStructs(IProgressMonitor monitor, String aTraceFile) {
+		boolean stack=false;
+
+		if (aTraceFile.contains(MocaConstants.STACK_FILE_TYPE))
+			stack=true;
+
+		BufferedReader br;
+		try {
+			br = new BufferedReader(new InputStreamReader(new DataInputStream(
+					new FileInputStream(aTraceFile))));
+
+			String[] line;
+			line = getLine(br);//Ignore first line (description
+			
+			while ((line = getLine(br)) != null) {
+				//Remove whitespaces
+				for(int i=0; i < line.length; i++) {
+					line[i]=line[i].trim();
+				}
+				
+				String name=line[MocaConstants.S_NAME];
+				long addr=Long.valueOf(line[MocaConstants.S_ADDR], 16);
+				long sz=Long.valueOf(line[MocaConstants.S_SIZE], 16);
+				long end;
+				
+				if(stack){
+					end=addr;
+					addr-=sz;
+					name=MocaConstants.STACK_NAME+name;
+				}else{
+					end=addr+sz;
+				}
+				
+				//TODO: Make sure this Ep exists
+				// Create a producer with root pid
+				EventProducer anEP = createProducer(name,
+						root.get(MocaTraceType.VIRTUAL_ADDRESSING).getId());
+				// Create the data structure and add it to the list
+				dataStructures.add(new DataStruct(addr, end, name, anEP));
+			}
+			Collections.sort(dataStructures);	
+		} catch (FileNotFoundException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+	}
+	
+	
 	private void parseEventProd(IProgressMonitor monitor, String aTraceFile) {
 		MocaTraceType currentTraceType;
-		//boolean virtual;
+		boolean breakConsecutive=false;
+		boolean inStruct=false;
+		boolean prevInStruct=false;
+		boolean useStructs=false;
 		
 		if (aTraceFile.contains("Physical")) {
 			currentTraceType = MocaTraceType.PHYSICAL_ADDRESSING;
-			//virtual = false;
 		} else {
 			currentTraceType = MocaTraceType.VIRTUAL_ADDRESSING;
-			//virtual = true;
+			useStructs = true;
 		}
 
 		long previousAddress = -1;
@@ -565,17 +619,66 @@ public class MocaParser {
 			// Init to a value we are sure is not consecutive to the first address
 			previousAddress = memoryPageSize - 1;
 			
+			DataStruct curStruct=null;
+			Iterator<DataStruct> structsIt=null;
+			if(useStructs){
+				structsIt = dataStructures.iterator();
+				if(structsIt.hasNext()){
+					curStruct=structsIt.next();
+				}else{
+					useStructs=false;
+				}
+			}
+			
 			while ((line = getLine(br)) != null) {
+				breakConsecutive=false;
 				if (line.length <= 1)
 					continue;
 				long addr=Long.valueOf(line[0], 16);
 				
-				// Create a producer with root pid
-				EventProducer anEP = createProducer(addr,
+				if(useStructs){
+					int pos=curStruct.relativePosTo(addr);
+					//inStruct=(pos==0);
+					while(pos==1)
+					{
+						// Is it the last struc ?
+						if(structsIt.hasNext()){
+							curStruct=structsIt.next();
+							pos=curStruct.relativePosTo(addr);
+						}else{
+							useStructs=false;
+							pos=-1;
+						}
+						
+						if(prevInStruct){
+							//Previous addr was in struct, we are not consecutive anymore
+							breakConsecutive=true;
+						}
+					}
+					// Here pos <=0 which means that curStruct is the next possible data structure
+					inStruct=(pos==0);
+					// We are the first address of a structure => we need to break a consecutive list
+					if(!prevInStruct)
+						breakConsecutive=true;
+				}else{
+					inStruct=false;
+				}
+				prevInStruct=inStruct;
+					
+				EventProducer anEP;
+				if(inStruct)
+				{
+					// Create a producer within the data structure 
+					anEP = createProducer(addr,curStruct.getEP().getId());
+				}else
+				{
+					// Create a producer with root pid
+					anEP = createProducer(addr,
 						root.get(currentTraceType).getId());
-				
-				// Is it consecutive?
-				if (previousAddress + memoryPageSize == addr) {
+				}
+				//TODO: Use yout fucking brain
+					// Is it consecutive?
+				if ((previousAddress + memoryPageSize == addr || inStruct) && !breakConsecutive) {
 					// Then add to current list
 					currentConsecutiveProducers.add(anEP);
 				} else {
@@ -594,10 +697,6 @@ public class MocaParser {
 					int tid=Integer.parseInt(line[i]);
 					if(tid>=numThreads)
 						numThreads=tid+1;
-//					if(!producerTaskIndex.containsKey(line[i]))
-//						producerTaskIndex.put(line[i], new LinkedList<String>());
-//					
-//					producerTaskIndex.get(line[i]).add(String.valueOf(addr));
 				}
 				if (line.length > 2)
 					sharedAddress.add(addr);
@@ -611,7 +710,6 @@ public class MocaParser {
 							currentConsecutiveProducers);
 			
 			buildHierarchy(currentTraceType);
-			//createTaskEventProd(producerTaskIndex, virtual);
 		} catch (FileNotFoundException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
@@ -801,70 +899,5 @@ public class MocaParser {
 
 		return dividingFactor;
 	}
-
-//	private void createTaskEventProd(
-//			HashMap<String, List<String>> producerTaskIndex, boolean virtual) {
-//		MocaTraceType currentTraceType;
-//		MocaTraceType nonTaskTraceType;
-//		if (!virtual) {
-//			currentTraceType = MocaTraceType.TASK_PHYSICAL_ADDRESSING;
-//			nonTaskTraceType = MocaTraceType.PHYSICAL_ADDRESSING;
-//		} else {
-//			currentTraceType = MocaTraceType.TASK_VIRTUAL_ADDRESSING;
-//			nonTaskTraceType = MocaTraceType.VIRTUAL_ADDRESSING;
-//		}
-//
-//		for (String aTask : producerTaskIndex.keySet()) {
-//			EventProducer taskProducer = createProducer(aTask,
-//					root.get(currentTraceType).getId());
-//			taskProducer.setType("Task Producer");
-//			allProducers.get(currentTraceType).add(taskProducer);
-//			// Index keeping track of the correspondence between ancient and new
-//			// producers
-//			HashMap<Integer, EventProducer> parentIndex = new HashMap<Integer, EventProducer>();
-//			List<EventProducer> newProducers = new LinkedList<EventProducer>();
-//			taskProducersIndex.get(currentTraceType).put(aTask,
-//					new HashMap<String, EventProducer>());
-//			taskProducersIndex.get(currentTraceType).get(aTask)
-//					.put(taskProducer.getName(), taskProducer);
-//
-//			// Create the producer
-//			for (EventProducer aProd : allProducers.get(nonTaskTraceType)) {
-//				// Don't copy root
-//				if (!aProd.getName().equals(MocaConstants.MEMORY_ROOT_NAME)) {
-//					EventProducer newProducer = createProducer(aProd.getName(),
-//							aProd.getParentId());
-//					parentIndex.put(aProd.getId(), newProducer);
-//					newProducers.add(newProducer);
-//
-//				} else {
-//					parentIndex.put(root.get(nonTaskTraceType).getId(),
-//							taskProducer);
-//				}
-//			}
-//
-//			// Set the parent ID
-//			for (EventProducer aProd : newProducers) {
-//				// Don't update root
-//				if (!aProd.getName().equals(MocaConstants.TASK_ROOT_NAME)
-//						&& !aProd.getType().equals("Task Producer")) {
-//
-//					if (parentIndex.containsKey(aProd.getParentId())) {
-//						aProd.setParentId(parentIndex.get(aProd.getParentId())
-//								.getId());
-//					} else {
-//						logger.error("Missing parent ID while rebuilding the hierarchy in process "
-//								+ aTask);
-//					}
-//				}
-//			}
-//
-//			for (EventProducer aProd : newProducers)
-//				taskProducersIndex.get(currentTraceType).get(aTask)
-//						.put(aProd.getName(), aProd);
-//
-//			allProducers.get(currentTraceType).addAll(newProducers);
-//		}
-//	}
 	
 }
