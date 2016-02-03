@@ -29,7 +29,6 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.NoSuchElementException;
 import java.util.Set;
 
 import org.apache.commons.io.FilenameUtils;
@@ -93,9 +92,7 @@ public class MocaParser {
 		private Long start;
 		private Long end;
 		private EventProducer EP;
-		public DataStruct(Long start, Long end, String name,
-				EventProducer eP) {
-			super();
+		public DataStruct(Long start, Long end, EventProducer eP) {
 			this.start = start;
 			this.end = end;
 			EP = eP;
@@ -150,7 +147,7 @@ public class MocaParser {
 	private Map<MocaTraceType, Map<String, EventProducer>> producersIndex = new HashMap<MocaTraceType, Map<String, EventProducer>>();
 	private Map<MocaTraceType, Map<String, Map<String, EventProducer>>> taskProducersIndex = new HashMap<MocaTraceType, Map<String, Map<String, EventProducer>>>();
 	
-	private int memoryPageSize = -1;
+	private int memoryPageSize = 4096;
 	private int maxHierarchyDepth = 4;
 	private int numThreads=0;
 	private boolean trimLoneEventProducers;
@@ -559,24 +556,23 @@ public class MocaParser {
 				}
 				
 				String name=line[MocaConstants.S_NAME];
-				long addr=Long.valueOf(line[MocaConstants.S_ADDR], 16);
-				long sz=Long.valueOf(line[MocaConstants.S_SIZE], 16);
+				long addr=Long.valueOf(line[MocaConstants.S_ADDR]);
+				long sz=Long.valueOf(line[MocaConstants.S_SIZE]);
 				long end;
 				
 				if(stack){
-					end=addr;
+					end=addr*memoryPageSize;
 					addr-=sz;
 					name=MocaConstants.STACK_NAME+name;
 				}else{
 					end=addr+sz;
 				}
 				
-				//TODO: Make sure this Ep exists
 				// Create a producer with root pid
 				EventProducer anEP = createProducer(name,
 						root.get(MocaTraceType.VIRTUAL_ADDRESSING).getId());
 				// Create the data structure and add it to the list
-				dataStructures.add(new DataStruct(addr, end, name, anEP));
+				dataStructures.add(new DataStruct(addr, end, anEP));
 			}
 			Collections.sort(dataStructures);	
 		} catch (FileNotFoundException e) {
@@ -595,6 +591,7 @@ public class MocaParser {
 		boolean inStruct=false;
 		boolean prevInStruct=false;
 		boolean useStructs=false;
+		int numAddrInstruct=0;
 		
 		if (aTraceFile.contains("Physical")) {
 			currentTraceType = MocaTraceType.PHYSICAL_ADDRESSING;
@@ -615,6 +612,7 @@ public class MocaParser {
 			// First line should be memory page size
 			line = getLine(br);
 			memoryPageSize = Integer.valueOf(line[0]);
+			long PAGE_MASK=(~(memoryPageSize-1));
 			
 			// Init to a value we are sure is not consecutive to the first address
 			previousAddress = memoryPageSize - 1;
@@ -635,12 +633,14 @@ public class MocaParser {
 				if (line.length <= 1)
 					continue;
 				long addr=Long.valueOf(line[0], 16);
+				long page=addr&PAGE_MASK;
 				
 				if(useStructs){
 					int pos=curStruct.relativePosTo(addr);
 					//inStruct=(pos==0);
 					while(pos==1)
 					{
+						logger.debug("Struct "+curStruct.EP.getName()+" contains "+numAddrInstruct+" accesses");
 						// Is it the last struc ?
 						if(structsIt.hasNext()){
 							curStruct=structsIt.next();
@@ -660,6 +660,7 @@ public class MocaParser {
 					// We are the first address of a structure => we need to break a consecutive list
 					if(!prevInStruct)
 						breakConsecutive=true;
+					
 				}else{
 					inStruct=false;
 				}
@@ -670,15 +671,17 @@ public class MocaParser {
 				{
 					// Create a producer within the data structure 
 					anEP = createProducer(addr,curStruct.getEP().getId());
+					numAddrInstruct++;
 				}else
 				{
+					numAddrInstruct=0;
 					// Create a producer with root pid
 					anEP = createProducer(addr,
 						root.get(currentTraceType).getId());
 				}
 				//TODO: Use yout fucking brain
 					// Is it consecutive?
-				if ((previousAddress + memoryPageSize == addr || inStruct) && !breakConsecutive) {
+				if ((previousAddress + memoryPageSize == page || previousAddress == page || inStruct) && !breakConsecutive) {
 					// Then add to current list
 					currentConsecutiveProducers.add(anEP);
 				} else {
@@ -702,7 +705,7 @@ public class MocaParser {
 					sharedAddress.add(addr);
 				
 				// Update the previous address
-				previousAddress = addr;
+				previousAddress = page;
 			}
 			
 			// Save the last producer(s)
