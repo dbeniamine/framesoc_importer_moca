@@ -4,7 +4,7 @@
  * are made available under the terms of the Eclipse Public License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/legal/epl-v10.html
- * 
+ *
  * Contributors:
  *     Generoso Pagano - initial API and implementation
  *     David Beniamine - Adaptation from PjDump to HeapInfo
@@ -39,7 +39,7 @@ import fr.inria.soctrace.tools.importer.moca.input.MocaInput;
 
 /**
  * Moca importer tool.
- * 
+ *
  * @author "David Beniamine <David.Beniamine@imag.fr>"
  * @author "Generoso Pagano <Generoso.Pagano@inria.fr>"
  */
@@ -72,8 +72,9 @@ public class MocaImporter extends FramesocTool {
 			}
 
 			boolean trimLoneEP = input.isTrimLonelyProducer();
+			boolean trimOutOfStructs = input.isStructsOnly();
 			int maxHierarchyDepth = input.getMaxHierarchyDepth();
-			
+
 			String pattern = Pattern
 					.quote(System.getProperty("file.separator"));
 
@@ -87,13 +88,13 @@ public class MocaImporter extends FramesocTool {
 			if (t2.endsWith(MocaConstants.TRACE_EXT))
 				t2 = t2.replace(MocaConstants.TRACE_EXT, "");
 			String traceName;
-			
+
 			// Set trace name as the directory name
 			if (t.length - 2 >= 0)
 				traceName = t[t.length - 2];
 			else
 				traceName = "Moca";
-				
+
 			String traceDbName = FramesocManager.getInstance().getTraceDBName(
 					traceName);
 
@@ -113,7 +114,7 @@ public class MocaImporter extends FramesocTool {
 				tracesDB.put(MocaTraceType.VIRTUAL_ADDRESSING, traceDBVirt);
 				tracesDB.put(MocaTraceType.PHYSICAL_ADDRESSING, traceDBPhys);
 				// parsing
-				MocaParser parser = new MocaParser(sysDB, tracesDB, files, trimLoneEP, maxHierarchyDepth);
+				MocaParser parser = new MocaParser(sysDB, tracesDB, files, trimLoneEP, trimOutOfStructs, maxHierarchyDepth);
 				parser.parseTrace(monitor);
 
 				// close the traces DB and the system DB (commit)
@@ -159,7 +160,7 @@ public class MocaImporter extends FramesocTool {
 	@Override
 	public ParameterCheckStatus canLaunch(IFramesocToolInput input) {
 		MocaInput args = (MocaInput) input;
-		
+
 		if (args.getFiles().size() < 1)
 			return new ParameterCheckStatus(false, "Not enough arguments.");
 
@@ -172,5 +173,5 @@ public class MocaImporter extends FramesocTool {
 
 		return new ParameterCheckStatus(true, "");
 	}
-	
+
 }

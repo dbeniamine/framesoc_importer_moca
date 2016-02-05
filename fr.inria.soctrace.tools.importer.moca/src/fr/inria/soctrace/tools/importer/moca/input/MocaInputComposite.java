@@ -17,13 +17,14 @@ import fr.inria.soctrace.framesoc.ui.input.DefaultImporterInputComposite;
 import fr.inria.soctrace.framesoc.ui.listeners.LaunchTextListener;
 
 public class MocaInputComposite extends DefaultImporterInputComposite {
-	
+
 	private boolean trimLonelyProducer = false;
+	private boolean inStructsOnly = false;
 	private int maxHierarchyDepth = 16;
-	
+
 	public MocaInputComposite(Composite parent, int style) {
 		super(parent, style);
-		
+
 		setLayout(new GridLayout(2, false));
 
 		final Button btnTrimLoneEPButton = new Button(this, SWT.CHECK);
@@ -36,11 +37,21 @@ public class MocaInputComposite extends DefaultImporterInputComposite {
 				trimLonelyProducer = btnTrimLoneEPButton.getSelection();
 			}
 		});
+		final Button btnStructsOnly = new Button(this, SWT.CHECK);
+		btnStructsOnly.setText("Keep only accesses in data structures");
+		btnStructsOnly.setSelection(inStructsOnly);
+		btnStructsOnly.setToolTipText("Remove event producers that are not in data structure.");
+		btnStructsOnly.addSelectionListener(new SelectionAdapter() {
+			@Override
+			public void widgetSelected(SelectionEvent e) {
+				inStructsOnly = btnStructsOnly.getSelection();
+			}
+		});
 		new Label(this, SWT.NONE);
-		
+
 		final Label hierarchyDepth = new Label(this, SWT.NONE);
 		hierarchyDepth.setText("Max. Hierarchy Depth");
-		
+
 		final Spinner maxHierarDepthSpinner = new Spinner(this, SWT.BORDER	);
 		maxHierarDepthSpinner.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false, 1, 1));
 		maxHierarDepthSpinner.setToolTipText("");
@@ -55,13 +66,14 @@ public class MocaInputComposite extends DefaultImporterInputComposite {
 		});
 	}
 
-	
+
 	@Override
 	public IFramesocToolInput getToolInput() {
 		MocaInput input = new MocaInput();
 		input.setFiles(Arrays.asList(LaunchTextListener.getTokens(traceFileListener.getText())));
 		input.setMaxHierarchyDepth(maxHierarchyDepth);
 		input.setTrimLonelyProducer(trimLonelyProducer);
+		input.setInStructOnly(inStructsOnly);
 		return input;
 	}
 }

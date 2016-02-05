@@ -5,9 +5,10 @@ import java.util.List;
 import fr.inria.soctrace.framesoc.core.tools.model.IFramesocToolInput;
 
 public class MocaInput implements IFramesocToolInput {
-	
+
 	protected List<String> files;
 	private boolean trimLonelyProducer = false;
+	private boolean inStructsOnly = false;
 	private int maxHierarchyDepth = 16;
 
 	@Override
@@ -37,6 +38,14 @@ public class MocaInput implements IFramesocToolInput {
 
 	public void setMaxHierarchyDepth(int maxHierarchyDepth) {
 		this.maxHierarchyDepth = maxHierarchyDepth;
+	}
+
+	public void setInStructOnly(boolean inStructOnly){
+		this.inStructsOnly=inStructOnly;
+	}
+
+	public boolean isStructsOnly() {
+		return inStructsOnly;
 	}
 
 }
