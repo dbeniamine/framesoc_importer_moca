@@ -292,7 +292,6 @@ public class MocaParser {
 					if (eventList.get(currentTraceType).size() == MocaConstants.DB_PAGE_SIZE)
 						page++;
 
-					// XXX
 					if (eventList.get(currentTraceType).size() >= MocaConstants.DB_PAGE_SIZE) {
 						saveEvents(eventList.get(currentTraceType), currentTraceType);
 						numberOfEvents += eventList.get(currentTraceType).size();
@@ -565,17 +564,15 @@ public class MocaParser {
 				}
 
 				// Create a producer with root pid
-				EventProducer anEP = createProducer(name,
+				EventProducer anEP = createProducer(addr+"_"+name,
 						root.get(MocaTraceType.VIRTUAL_ADDRESSING).getId());
 				// Create the data structure and add it to the list
 				dataStructures.add(new DataStruct(addr, end, anEP));
 			}
 			Collections.sort(dataStructures);
 		} catch (FileNotFoundException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		} catch (IOException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
 	}
@@ -713,10 +710,8 @@ public class MocaParser {
 
 			buildHierarchy(currentTraceType);
 		} catch (FileNotFoundException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		} catch (IOException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
 	}
@@ -785,7 +780,7 @@ public class MocaParser {
 			@Override
 			public int compare(final EventProducer arg0,
 					final EventProducer arg1) {
-				return arg0.getName().compareTo(arg1.getName());
+				return arg0.getName().replaceAll("_.*", "").compareTo(arg1.getName().replaceAll("_.*",""));
 			}
 		});
 
