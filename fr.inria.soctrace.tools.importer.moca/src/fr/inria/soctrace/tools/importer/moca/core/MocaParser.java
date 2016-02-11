@@ -22,7 +22,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -564,7 +563,7 @@ public class MocaParser {
 				}
 
 				// Create a producer with root pid
-				EventProducer anEP = createProducer(addr+"_"+name,
+				EventProducer anEP = createProducer(name,
 						root.get(MocaTraceType.VIRTUAL_ADDRESSING).getId());
 				// Create the data structure and add it to the list
 				dataStructures.add(new DataStruct(addr, end, anEP));
@@ -629,6 +628,7 @@ public class MocaParser {
 				breakConsecutive=false;
 				long addr=Long.valueOf(line[0], 16);
 				long page=addr&PAGE_MASK;
+				boolean addParentToConsecutive = false;
 
 				if(useStructs){
 					int pos=curStruct.relativePosTo(addr);
@@ -654,26 +654,15 @@ public class MocaParser {
 						inStruct=true;
 						// We have to break if we are the first in the struct
 						breakConsecutive |= !prevInStruct;
+						addParentToConsecutive = !prevInStruct;
 					}
 
 				}else{
 					inStruct=false;
 				}
 
-				int parentId;
-				if(inStruct)
-				{
-					parentId=curStruct.getEP().getId();
-				}else
-				{
-					if(trimOutOfStructs &&
-							currentTraceType == MocaTraceType.VIRTUAL_ADDRESSING){
-						continue;
-					}
-					parentId=root.get(currentTraceType).getId();
-				}
 				// Create producer
-				EventProducer anEP=createProducer(addr,parentId);
+				EventProducer anEP=createProducer(addr,root.get(currentTraceType).getId());
 
 				// Is it consecutive?
 				if (!breakConsecutive &&
@@ -688,6 +677,9 @@ public class MocaParser {
 						// Start a new list
 						currentConsecutiveProducers = new LinkedList<EventProducer>();
 					}
+
+					if(addParentToConsecutive)
+						currentConsecutiveProducers.add(curStruct.getEP());
 					// And add the current prod
 					currentConsecutiveProducers.add(anEP);
 				}
@@ -775,15 +767,6 @@ public class MocaParser {
 			int ppid, int dividingFactor) {
 		LinkedList<EventProducer> newEventProd = new LinkedList<EventProducer>();
 
-		// Sort by ascending addresses
-		Collections.sort(eventProdToMerge, new Comparator<EventProducer>() {
-			@Override
-			public int compare(final EventProducer arg0,
-					final EventProducer arg1) {
-				return arg0.getName().replaceAll("_.*", "").compareTo(arg1.getName().replaceAll("_.*",""));
-			}
-		});
-
 		int groupSize;
 
 		// If first hierarchy depth
@@ -814,6 +797,7 @@ public class MocaParser {
 				newSubGroup.add(eventProdToMerge.get(j));
 			}
 
+
 			// Keep merging?
 			if (currentHierarchyDepth + 1 < maxHierarchyDepth
 					&& newSubGroup.size() >= dividingFactor
@@ -833,28 +817,33 @@ public class MocaParser {
 		if (remainingEP == 1) {
 			newEventProd.add(eventProdToMerge.get(eventProdToMerge.size() - 1));
 		} else
-		// Check if some producer remains
-		if (mergedProducers < eventProdToMerge.size()) {
-			EventProducer newNode = createProducer(eventProdToMerge.get(i)
-					.getName() + "_" + (int) currentHierarchyDepth, ppid);
-			newEventProd.add(newNode);
-			LinkedList<EventProducer> newSubGroup = new LinkedList<EventProducer>();
+			// Check if some producer remains
+			if (mergedProducers < eventProdToMerge.size()) {
+				EventProducer newNode = createProducer(eventProdToMerge.get(i)
+						.getName() + "_" + (int) currentHierarchyDepth, ppid);
+				newEventProd.add(newNode);
+				LinkedList<EventProducer> newSubGroup = new LinkedList<EventProducer>();
 
-			for (i = mergedProducers; i < eventProdToMerge.size(); i++) {
-				eventProdToMerge.get(i).setParentId(newNode.getId());
-				newSubGroup.add(eventProdToMerge.get(i));
-			}
+				for (i = mergedProducers; i < eventProdToMerge.size(); i++) {
+					if(currentHierarchyDepth > 0.0 || newNode.getName().matches("^\\d+$")
+							|| newNode.getName().compareTo(eventProdToMerge.get(i).getName()
+									+ "_" + (int) currentHierarchyDepth) != 0){
+						// Do not copy data structure at depth 0
+						eventProdToMerge.get(i).setParentId(newNode.getId());
+						newSubGroup.add(eventProdToMerge.get(i));
+					}
+				}
 
-			if (currentHierarchyDepth + 1 < maxHierarchyDepth
-					&& newSubGroup.size() >= dividingFactor
-					&& newSubGroup.size() > 1 && dividingFactor > 1) {
-				newEventProd.addAll(createHierarchy(newSubGroup,
-						currentHierarchyDepth + 1, newNode.getId(),
-						dividingFactor));
-			} else {
-				newEventProd.addAll(newSubGroup);
+				if (currentHierarchyDepth + 1 < maxHierarchyDepth
+						&& newSubGroup.size() >= dividingFactor
+						&& newSubGroup.size() > 1 && dividingFactor > 1) {
+					newEventProd.addAll(createHierarchy(newSubGroup,
+							currentHierarchyDepth + 1, newNode.getId(),
+							dividingFactor));
+				} else {
+					newEventProd.addAll(newSubGroup);
+				}
 			}
-		}
 
 		logger.debug(currentHierarchyDepth + ", " + newEventProd.size());
 		return newEventProd;
