@@ -632,7 +632,7 @@ public class MocaParser {
 
 				if(useStructs){
 					int pos=curStruct.relativePosTo(addr);
-					while(pos==1) // We are afte the current structure
+					while(pos==1) // We are after the current structure
 					{
 						logger.debug("Struct "+curStruct.EP.getName()+" contains "+numAddrInstruct+" accesses");
 						// Is it the last struc ?
@@ -724,6 +724,9 @@ public class MocaParser {
 					ignoredEventProd.get(aTraceType).add(Long.valueOf(groupOfProducers.get(0).getName()));
 					continue;
 				} else {
+					if(aTraceType == MocaTraceType.VIRTUAL_ADDRESSING && trimOutOfStructs &&
+							!groupOfProducers.get(0).getName().matches("^\\d+$") )
+							continue; //Trim Out of Structs
 					// Just add it to the list
 					allProducers.get(aTraceType).addAll(groupOfProducers);
 				}
