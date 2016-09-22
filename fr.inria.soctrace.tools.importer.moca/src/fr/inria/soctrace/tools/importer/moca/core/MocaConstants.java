@@ -84,7 +84,9 @@ public class MocaConstants {
 	 * Enumerate the different types of traces
 	 */
 	public static enum MocaTraceType {
-		VIRTUAL_ADDRESSING, PHYSICAL_ADDRESSING
+		TASK_VIRTUAL_ADDRESSING, VIRTUAL_ADDRESSING, TASK_PHYSICAL_ADDRESSING, PHYSICAL_ADDRESSING
 	};
+	public static final MocaTraceType[] MocaVirtualTraceType = {MocaTraceType.TASK_VIRTUAL_ADDRESSING,MocaTraceType.VIRTUAL_ADDRESSING,};
+	public static final MocaTraceType[] MocaPhysicalTraceType = {MocaTraceType.TASK_PHYSICAL_ADDRESSING,MocaTraceType.PHYSICAL_ADDRESSING,};
 
 }
